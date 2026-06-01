@@ -1,0 +1,18 @@
+# Dataset and weights
+*.zip
+yolo_dataset/
+datasets/
+runs/
+*.pt
+
+# Python and virtual environments
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+
+# Jupytext and IDE
+.ipynb_checkpoints/
+.vscode/
+jupytext.toml
