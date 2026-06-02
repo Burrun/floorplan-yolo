@@ -1,0 +1,214 @@
+{
+	"categories": [
+		{
+			"id": 1,
+			"name": "공간_다목적공간"
+		},
+		{
+			"id": 2,
+			"name": "공간_엘리베이터홀"
+		},
+		{
+			"id": 3,
+			"name": "공간_계단실"
+		},
+		{
+			"id": 4,
+			"name": "객체_변기"
+		},
+		{
+			"id": 5,
+			"name": "객체_세면대"
+		},
+		{
+			"id": 6,
+			"name": "객체_싱크대"
+		},
+		{
+			"id": 7,
+			"name": "객체_욕조"
+		},
+		{
+			"id": 8,
+			"name": "객체_가스레인지"
+		},
+		{
+			"id": 9,
+			"name": "구조_출입문"
+		},
+		{
+			"id": 10,
+			"name": "구조_창호"
+		},
+		{
+			"id": 11,
+			"name": "구조_벽체"
+		},
+		{
+			"id": 12,
+			"name": "background"
+		},
+		{
+			"id": 13,
+			"name": "공간_거실"
+		},
+		{
+			"id": 14,
+			"name": "공간_침실"
+		},
+		{
+			"id": 15,
+			"name": "공간_주방"
+		},
+		{
+			"id": 16,
+			"name": "공간_현관"
+		},
+		{
+			"id": 17,
+			"name": "공간_발코니"
+		},
+		{
+			"id": 18,
+			"name": "공간_화장실"
+		},
+		{
+			"id": 19,
+			"name": "공간_실외기실"
+		},
+		{
+			"id": 20,
+			"name": "공간_드레스룸"
+		},
+		{
+			"id": 21,
+			"name": "OCR"
+		},
+		{
+			"id": 22,
+			"name": "공간_기타"
+		},
+		{
+			"id": 23,
+			"name": "공간_엘리베이터"
+		}
+	],
+	"images": [
+		{
+			"id": 1,
+			"width": 4962,
+			"height": 3508,
+			"file_name": "APT_FP_OBJ_030727367.PNG"
+		}
+	],
+	"annotations": [
+		{
+			"id": 0,
+			"image_id": 1,
+			"category_id": 4,
+			"segmentation": [],
+			"area": 4910.975999999991,
+			"bbox": [
+				3299.06,
+				1580.68,
+				89.6,
+				54.81
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 1,
+			"image_id": 1,
+			"category_id": 5,
+			"segmentation": [],
+			"area": 3631.549999999993,
+			"bbox": [
+				3316.94,
+				1502.07,
+				55.87,
+				65.0
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 2,
+			"image_id": 1,
+			"category_id": 5,
+			"segmentation": [],
+			"area": 2925.3532000000014,
+			"bbox": [
+				1730.52,
+				1446.47,
+				52.36,
+				55.87
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 3,
+			"image_id": 1,
+			"category_id": 8,
+			"segmentation": [],
+			"area": 4480.0665,
+			"bbox": [
+				2191.85,
+				944.91,
+				71.35,
+				62.79
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 4,
+			"image_id": 1,
+			"category_id": 6,
+			"segmentation": [],
+			"area": 7294.698400000001,
+			"bbox": [
+				2340.42,
+				943.12,
+				116.38,
+				62.68
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 5,
+			"image_id": 1,
+			"category_id": 4,
+			"segmentation": [],
+			"area": 5117.193200000007,
+			"bbox": [
+				1990.23,
+				1564.52,
+				92.77,
+				55.16
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"occluded": false,
+				"rotation": 0.0
+			}
+		}
+	]
+}

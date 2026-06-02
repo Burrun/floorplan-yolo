@@ -1,0 +1,429 @@
+{
+	"categories": [
+		{
+			"id": 1,
+			"name": "공간_다목적공간"
+		},
+		{
+			"id": 2,
+			"name": "공간_엘리베이터홀"
+		},
+		{
+			"id": 3,
+			"name": "공간_계단실"
+		},
+		{
+			"id": 4,
+			"name": "객체_변기"
+		},
+		{
+			"id": 5,
+			"name": "객체_세면대"
+		},
+		{
+			"id": 6,
+			"name": "객체_싱크대"
+		},
+		{
+			"id": 7,
+			"name": "객체_욕조"
+		},
+		{
+			"id": 8,
+			"name": "객체_가스레인지"
+		},
+		{
+			"id": 9,
+			"name": "구조_출입문"
+		},
+		{
+			"id": 10,
+			"name": "구조_창호"
+		},
+		{
+			"id": 11,
+			"name": "구조_벽체"
+		},
+		{
+			"id": 12,
+			"name": "background"
+		},
+		{
+			"id": 13,
+			"name": "공간_거실"
+		},
+		{
+			"id": 14,
+			"name": "공간_침실"
+		},
+		{
+			"id": 15,
+			"name": "공간_주방"
+		},
+		{
+			"id": 16,
+			"name": "공간_현관"
+		},
+		{
+			"id": 17,
+			"name": "공간_발코니"
+		},
+		{
+			"id": 18,
+			"name": "공간_화장실"
+		},
+		{
+			"id": 19,
+			"name": "공간_실외기실"
+		},
+		{
+			"id": 20,
+			"name": "공간_드레스룸"
+		},
+		{
+			"id": 21,
+			"name": "OCR"
+		},
+		{
+			"id": 22,
+			"name": "공간_기타"
+		},
+		{
+			"id": 23,
+			"name": "공간_엘리베이터"
+		}
+	],
+	"images": [
+		{
+			"id": 1,
+			"width": 4961,
+			"height": 3508,
+			"file_name": "APT_FP_OCR_036996812.PNG"
+		}
+	],
+	"annotations": [
+		{
+			"id": 0,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 4205.190599999996,
+			"bbox": [
+				1306.39,
+				763.34,
+				129.87,
+				32.38
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "실외기실",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 1,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 3296.2259999999924,
+			"bbox": [
+				1318.0,
+				1022.21,
+				95.96,
+				34.35
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "발코니",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 2,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 2383.9528000000023,
+			"bbox": [
+				1697.64,
+				915.26,
+				66.74,
+				35.72
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "안방",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 3,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 2111.384100000007,
+			"bbox": [
+				2097.68,
+				1166.7,
+				62.97,
+				33.53
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "욕실",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 4,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 3390.0183000000047,
+			"bbox": [
+				1628.62,
+				1363.96,
+				96.83,
+				35.01
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "알파룸",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 5,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 2158.528499999995,
+			"bbox": [
+				2680.79,
+				1958.15,
+				64.53,
+				33.45
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "침실",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 6,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 2203.1677999999906,
+			"bbox": [
+				3107.28,
+				1957.4,
+				64.78,
+				34.01
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "침실",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 7,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 2489.5746000000017,
+			"bbox": [
+				1723.45,
+				1896.49,
+				77.34,
+				32.19
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "거실",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 8,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 3049.553300000004,
+			"bbox": [
+				2137.83,
+				2323.0,
+				93.23,
+				32.71
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "발코니",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 9,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 3049.553300000004,
+			"bbox": [
+				2678.79,
+				2244.33,
+				93.23,
+				32.71
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "발코니",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 10,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 3297.3500000000013,
+			"bbox": [
+				1347.84,
+				1894.58,
+				94.21,
+				35.0
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "발코니",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 11,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 4496.4234,
+			"bbox": [
+				2099.49,
+				740.02,
+				132.17,
+				34.02
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "드레스룸",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 12,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 16733.2692,
+			"bbox": [
+				1649.83,
+				2909.85,
+				244.21,
+				68.52
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "단위세대",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 13,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 12698.397599999971,
+			"bbox": [
+				1927.36,
+				2910.55,
+				189.84,
+				66.89
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "평면도",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 14,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 2154.9679999999908,
+			"bbox": [
+				2370.69,
+				1421.9,
+				64.52,
+				33.4
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "현관",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 15,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 2090.7712000000042,
+			"bbox": [
+				3178.12,
+				1597.2,
+				63.28,
+				33.04
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "욕실",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		},
+		{
+			"id": 16,
+			"image_id": 1,
+			"category_id": 21,
+			"segmentation": [],
+			"area": 4913.064000000016,
+			"bbox": [
+				2131.22,
+				1893.78,
+				144.8,
+				33.93
+			],
+			"iscrowd": 0,
+			"attributes": {
+				"OCR": "주방/식당",
+				"occluded": false,
+				"rotation": 0.0
+			}
+		}
+	]
+}
