@@ -8,7 +8,7 @@ try:
     from watchdog.events import FileSystemEventHandler
 except ImportError:
     print("watchdog package is required. Installing...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "watchdog"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "watchdog", "--break-system-packages"])
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
 
@@ -41,7 +41,7 @@ if __name__ == "__main__":
     path = "." if len(sys.argv) < 2 else sys.argv[1]
     event_handler = JupytextSyncHandler()
     observer = Observer()
-    observer.schedule(event_handler, path, recursive=False)
+    observer.schedule(event_handler, path, recursive=True)
     observer.start()
     print(f"Jupytext watcher started. Monitoring {path} for .ipynb/.py changes...")
     
