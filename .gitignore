@@ -1,8 +1,6 @@
 # Dataset and weights
 *.zip
-yolo_dataset/
-datasets/
-runs/
+content/
 *.pt
 
 # Python and virtual environments
