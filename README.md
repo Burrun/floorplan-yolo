@@ -65,3 +65,21 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 > 작업은 주로 `.py` 스크립트를 편집하며, Jupytext를 통해 Colab과 연동되는 `.ipynb`로 자동 변환/동기화 시킵니다.
+
+---
+
+## 🛠️ 트러블슈팅 (Troubleshooting)
+
+### YOLO 추론 시 한글 라벨이 물음표(`?????`)로 깨지는 현상
+YOLOv8의 기본 폰트(Arial)가 한글을 지원하지 않아 발생하는 문제입니다. 다음과 같이 한글 폰트(나눔고딕)를 다운로드하여 YOLO 내부 폰트를 덮어씌우면 해결됩니다.
+
+**Colab 해결 방법 (새 셀을 열고 아래 코드 실행):**
+```bash
+# 1. 나눔고딕 폰트 다운로드
+!wget -q -O NanumGothic.ttf https://github.com/naver/nanumfont/raw/master/NanumFont/NanumGothic.ttf
+
+# 2. YOLO 폰트 디렉토리 생성 및 덮어쓰기
+!mkdir -p /root/.config/Ultralytics
+!mv NanumGothic.ttf /root/.config/Ultralytics/Arial.ttf
+```
+실행 후 다시 시각화/추론 코드를 돌리면 한글이 정상 출력됩니다.
