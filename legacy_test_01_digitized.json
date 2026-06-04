@@ -1,0 +1,27 @@
+{
+    "image_filename": "legacy_test_01.jpg",
+    "predictions": [
+        {
+            "class_id": 0,
+            "class_name": "객체_변기",
+            "confidence": 0.48901474475860596,
+            "bbox": [
+                373.0,
+                529.0,
+                394.0,
+                555.0
+            ]
+        },
+        {
+            "class_id": 3,
+            "class_name": "객체_욕조",
+            "confidence": 0.2645542621612549,
+            "bbox": [
+                368.0,
+                497.0,
+                394.0,
+                523.0
+            ]
+        }
+    ]
+}
