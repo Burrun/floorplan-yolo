@@ -382,6 +382,9 @@ for size in data_sizes:
         data=str(yaml_path_size),
         epochs=10, # 데이터 크기별 추세를 보기 위한 빠른 학습
         imgsz=640,
+        batch=128,      # L40S 최적화
+        workers=8,
+        cache=True,
         project=str(PROJECT_ROOT / "runs/detect"),
         name=f"train_size_{size}",
         verbose=False
@@ -425,8 +428,9 @@ results_baseline = model_baseline.train(
     data=str(YOLO_DIR / "dataset_1000.yaml"),
     epochs=50,
     imgsz=640,
-    batch=8,
-    workers=2,
+    batch=128,      # L40S 48GB VRAM 활용 극대화
+    workers=8,      # CPU 데이터 전처리 병목 해결
+    cache=True,     # 이미지를 RAM에 캐싱하여 디스크 병목 해결
     project=str(PROJECT_ROOT / "runs/detect"),
     name="train_baseline",
     val=True
@@ -444,11 +448,12 @@ model_augmented = YOLO("yolov8n.pt")
 
 # 도메인 맞춤형 증강 파라미터 셋업 (레거시 도면 시뮬레이션)
 results_augmented = model_augmented.train(
-    data=str(yaml_path),
+    data=str(YOLO_DIR / "dataset_1000.yaml"),
     epochs=50,
     imgsz=640,
-    batch=8,
-    workers=2,
+    batch=128,      # L40S 48GB VRAM 활용 극대화
+    workers=8,      # CPU 데이터 전처리 병목 해결
+    cache=True,     # 이미지를 RAM에 캐싱하여 디스크 병목 해결
     project=str(PROJECT_ROOT / "runs/detect"),
     name="train_augmented",
     # === Domain Gap 극복을 위한 Domain-Specific Augmentation ===
@@ -569,6 +574,9 @@ results_scratch = model_scratch.train(
     data=str(ocr_yaml_path), 
     epochs=10,  # 검증용
     imgsz=640,
+    batch=128,
+    workers=8,
+    cache=True,
     project=str(PROJECT_ROOT / "runs/detect"),
     name="train_ocr_scratch"
 )
@@ -586,6 +594,9 @@ results_transfer = model_transfer.train(
     data=str(ocr_yaml_path), 
     epochs=10,
     imgsz=640,
+    batch=128,
+    workers=8,
+    cache=True,
     project=str(PROJECT_ROOT / "runs/detect"),
     name="train_ocr_transfer"
 )
@@ -699,6 +710,9 @@ results_master = model_master.train(
     data=str(master_yaml_path), 
     epochs=15,
     imgsz=640,
+    batch=128,
+    workers=8,
+    cache=True,
     # Phase 2에서 찾은 마일드한 도메인 맞춤형 증강 파라미터 적용
     hsv_s=0.2, hsv_v=0.2, degrees=2.0,
     project=str(PROJECT_ROOT / "runs/detect"),
