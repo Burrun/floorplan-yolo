@@ -86,7 +86,7 @@ DATA_DIR.mkdir(exist_ok=True)
 
 ZIP_NAME = "architectural_drawing_data.tar.zst"
 ZIP_PATH = DATA_DIR / ZIP_NAME
-EXTRACT_PATH = DATA_DIR / "architectural_drawing_data"
+EXTRACT_PATH = DATA_DIR / "architectural_drawing_data_part"
 
 GDRIVE_FILE_ID = '1jTXlydel8WaTW0OWDpmFJZ03HEqs1Dgz'
 
@@ -109,29 +109,23 @@ if not EXTRACT_PATH.exists():
             import gdown
             print(f"데이터셋({ZIP_NAME}) 다운로드 시작...")
             gdown.download(id=GDRIVE_FILE_ID, output=str(ZIP_PATH), quiet=False)
-    
+      
     # Step 2: 압축 해제
     if ZIP_PATH.exists():
         print(f"{ZIP_NAME} 압축 해제 중...")
-        EXTRACT_PATH.mkdir(parents=True, exist_ok=True)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
         
         try:
-            subprocess.run(["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(EXTRACT_PATH)], check=True)
+            subprocess.run(["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(DATA_DIR)], check=True)
         except Exception as e:
             print("zstd 패키지가 없거나 권한 오류 발생. zstd 설치 시도 중...")
             if IS_COLAB:
                 subprocess.run(["apt-get", "update"], check=True)
                 subprocess.run(["apt-get", "install", "-y", "zstd"], check=True)
-                subprocess.run(["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(EXTRACT_PATH)], check=True)
+                subprocess.run(["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(DATA_DIR)], check=True)
             else:
                 raise RuntimeError("압축 해제 실패: 터미널에서 'sudo apt install zstd' 를 실행 후 다시 시도하세요.")
                 
-        # 이중 폴더(architectural_drawing_data/architectural_drawing_data)로 풀렸을 경우 상위로 끌어올림
-        nested_dir = EXTRACT_PATH / "architectural_drawing_data"
-        if nested_dir.exists() and nested_dir.is_dir():
-            for item in nested_dir.iterdir():
-                shutil.move(str(item), str(EXTRACT_PATH))
-            nested_dir.rmdir()
             
         print("압축 해제 완료!")
     else:
@@ -146,6 +140,7 @@ else:
 #2. JSON 라벨 전처리 및 YOLO 포맷 변환 (Train/Val/Test)
 YOLO_DIR = EXTRACT_PATH / "yolo_dataset"
 CLASS_MAPPING = {4: 0, 5: 1, 6: 2, 7: 3, 8: 4}
+
 
 if not YOLO_DIR.exists():
     print("YOLO 데이터셋 포맷팅을 시작합니다...")
@@ -360,7 +355,7 @@ print("🔬 [실험 1] Data Size Ablation")
 print("=" * 60)
 
 train_images = list((YOLO_DIR / "images/train").glob("*.webp"))
-data_sizes = list(range(100, 1001, 100))  # [100, 200, ..., 1000]
+data_sizes = [100, 300, 500, 1000]
 scaling_results = {}
 
 for size in data_sizes:
@@ -419,7 +414,7 @@ if scaling_results:
 
 # %%
 # ──────────────────────────────────────────────
-# 대조군 (Baseline) - 실험 1에서 찾은 데이터 양(500장으로 일단 가정)으로 순정 학습
+# 대조군 (Baseline) - 실험 1에서 찾은 데이터 양(1000장)으로 순정 학습
 # ──────────────────────────────────────────────
 print("=" * 60)
 print("🔬 [Phase 1] Baseline 모델 학습 (증강 없음, 대조군)")
@@ -427,7 +422,7 @@ print("=" * 60)
 model_baseline = YOLO("yolov8n.pt")
 
 results_baseline = model_baseline.train(
-    data=str(yaml_path),
+    data=str(YOLO_DIR / "dataset_1000.yaml"),
     epochs=50,
     imgsz=640,
     batch=8,
