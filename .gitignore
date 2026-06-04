@@ -2,6 +2,7 @@
 *.zip
 content/
 *.pt
+data/
 
 # Python and virtual environments
 __pycache__/
