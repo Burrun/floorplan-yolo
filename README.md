@@ -15,7 +15,7 @@ AI Hub에서 제공하는 아파트 도면 데이터를 활용합니다.
 
 | 과제 | 사용 데이터 | 내용 | 활용 Phase |
 |------|------|------|-----------| 
-| **가구/설비** (Object Layout) | `object_layout` | 변기, 세면대, 싱크대, 욕조, 가스레인지 BBox | Phase 1 & 2 |
+| **가구/설비** (Object Layout) | `object_layout` & `structural_elements` | 주요 가구/설비 및 구조물 7종 (변기, 세면대, 싱크대, 욕조, 가스레인지, 문, 창호) BBox | Phase 1 & 2 |
 | **텍스트** (OCR) | `ocr` | 도면 내 텍스트(방 이름, 치수 등) BBox | Phase 3 |
 
 > **도메인 갭(Domain Gap) 이슈와 극복 방안**
@@ -52,7 +52,10 @@ AI Hub에서 제공하는 아파트 도면 데이터를 활용합니다.
 - **후처리** ⭐: **Topological Post-processing** (좌표 직교화 + 스냅) 적용.
   - 비뚤어진 bbox를 수평/수직으로 스냅, 가까운 좌표를 통일하여 JSON 품질 향상.
 - **한계 분석**: 과거 건축 기호(Symbol) 차이로 인한 미탐지(False Negative) 현상 기록.
-- **Future Work**: 레거시 도면 소량 Fine-tuning, End-to-End Vectorization(RoomFormer 등) 도입 제안.
+- **Future Work**: 
+  1. **실제 축척(Scale)을 반영한 Real-world JSON 변환** ⭐: 현재 YOLO가 출력하는 JSON은 도면 이미지 내 상대적 픽셀 좌표 기준입니다. 진정한 디지털화를 위해서는 OCR을 통해 도면 하단의 '축척(ex. 1:100)' 텍스트를 인식하고, 이를 기반으로 픽셀 좌표를 실제 물리적 치수(mm/cm)로 역산하는 스케일링 로직 추가가 필수적입니다.
+  2. 레거시 도면 소량 라벨링 후 Fine-tuning.
+  3. End-to-End Vectorization(RoomFormer 등) 모델 도입 제안.
 
 ---
 
