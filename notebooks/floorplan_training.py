@@ -80,6 +80,29 @@ else:
 print("Libraries imported successfully.")
 
 # %% [markdown]
+# ## 0-1. ⚙️ 하드웨어 프로필 (Hardware-Aware Profile) 설정
+# - RTX 5060 등 개인용 GPU와 L40S Pro 등 서버용 고성능 GPU의 스펙 차이가 큽니다.
+# - 고성능 GPU에서 VRAM 병목(점유율 60% 등)을 해결하고 100% 성능을 끌어내기 위해 **모드 변경 단 한 줄**로 모델 크기와 배치 사이즈를 자동 튜닝합니다.
+
+# %%
+# "consumer" : RTX 3060/4060/5060 등 8GB~12GB VRAM 용 (안정성 위주)
+# "pro"      : L40S, A100 등 24GB~48GB VRAM 용 (최고 속도 및 성능 펌핑)
+
+HARDWARE_PROFILE = "pro"  # <--- 여기서 모드만 바꾸세요!
+
+if HARDWARE_PROFILE == "pro":
+    BASE_WEIGHT = "yolov8m.pt" # (Medium 모델) Nano 대비 압도적 성능, 페이즈 2~4 전체 적용
+    # VRAM 50GB / RAM 120GB 한도를 고려한 '절대 안 터지는(Anti-OOM)' 최고 효율 세팅
+    BATCH_SIZE = 32            # 64는 간혹 피크치에서 튈 수 있으므로 32로 안정성 확보 (VRAM 약 12~15GB 소모 추정)
+    WORKERS = 8                # RAM(공유 메모리) 폭발을 막기 위해 16 대신 8로 타협
+    print(f"🚀 [PRO 모드 활성화] {BASE_WEIGHT} 가중치 / Batch={BATCH_SIZE} / Workers={WORKERS} (안정성+고속 세팅 완료!)")
+else:
+    BASE_WEIGHT = "yolov8n.pt" # (Nano 모델) VRAM 절약 및 빠른 학습
+    BATCH_SIZE = 16
+    WORKERS = 4
+    print(f"💻 [CONSUMER 모드 활성화] {BASE_WEIGHT} 가중치 및 Batch={BATCH_SIZE}로 안정성 세팅 완료!")
+
+# %% [markdown]
 # ## 1. 7클래스 마스터 데이터셋 연동 및 압축 해제
 
 # %%
@@ -247,13 +270,13 @@ for size in data_sizes:
         )
 
     print(f"\n🚀 Data Size: {size} 학습 시작 (30 Epochs 검증)")
-    model_size = YOLO("yolov8n.pt")
+    model_size = YOLO(BASE_WEIGHT)
     res_size = model_size.train(
         data=str(yaml_path_size),
         epochs=30,
         imgsz=640,
-        batch=16,
-        workers=8,
+        batch=BATCH_SIZE,
+        workers=WORKERS,
         cache=False,
         project=str(PROJECT_ROOT / "runs/detect"),
         name=f"train_size_{size}",
@@ -292,13 +315,13 @@ print("=" * 60)
 
 # 1. Baseline (순정 학습)
 print("🚀 Baseline 모델 학습 시작...")
-model_baseline = YOLO("yolov8n.pt")
+model_baseline = YOLO(BASE_WEIGHT)
 results_baseline = model_baseline.train(
     data=str(MASTER_DATASET_DIR / "dataset.yaml"),
     epochs=150, # 7클래스 난이도 상승 반영
     imgsz=640,
-    batch=16,
-    workers=8,
+    batch=BATCH_SIZE,
+    workers=WORKERS,
     cache=True,
     project=str(PROJECT_ROOT / "runs/detect"),
     name="train_baseline",
@@ -309,13 +332,13 @@ gc.collect()
 
 # 2. Augmented (도메인 맞춤형 증강 학습)
 print("\n🚀 Augmented 모델 학습 시작...")
-model_augmented = YOLO("yolov8n.pt")
+model_augmented = YOLO(BASE_WEIGHT)
 results_augmented = model_augmented.train(
     data=str(MASTER_DATASET_DIR / "dataset.yaml"),
     epochs=150, # 7클래스 난이도 상승 반영
     imgsz=640,
-    batch=16,
-    workers=8,
+    batch=BATCH_SIZE,
+    workers=WORKERS,
     cache=True,
     project=str(PROJECT_ROOT / "runs/detect"),
     name="train_augmented",
@@ -412,8 +435,8 @@ else:
         data=str(ocr_yaml_path),
         epochs=50,      # 클래스가 1개지만 견고한 학습을 위해 에폭 상향
         imgsz=640,
-        batch=16,
-        workers=8,
+        batch=BATCH_SIZE,
+        workers=WORKERS,
         cache=True,
         project=str(PROJECT_ROOT / "runs/detect"),
         name="train_ocr_transfer",
