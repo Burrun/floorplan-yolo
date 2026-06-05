@@ -6,7 +6,7 @@
 #       extension: .py
 #       format_name: percent
 #       format_version: '1.3'
-#       jupytext_version: 1.19.1
+#       jupytext_version: 1.19.3
 #   kernelspec:
 #     display_name: Python 3 (ipykernel)
 #     language: python
@@ -155,76 +155,84 @@ else:
 # %%
 # 2. JSON 라벨 전처리 및 YOLO 포맷 변환 (Train/Val/Test)
 YOLO_DIR = EXTRACT_PATH / "yolo_dataset"
-CLASS_MAPPING = {4: 0, 5: 1, 6: 2, 7: 3, 8: 4}
+CLASS_MAPPING = {4: 0, 5: 1, 6: 2, 7: 3, 8: 4, 9: 5, 10: 6}
 
 
-if not YOLO_DIR.exists():
-    print("YOLO 데이터셋 포맷팅을 시작합니다...")
+if YOLO_DIR.exists():
+    shutil.rmtree(YOLO_DIR)
+    print("기존 YOLO 데이터셋 폴더를 삭제했습니다.")
 
-    # === [통합 데이터셋 처리 코드] 파이프라인 검증용 ===
-    # 업로드 최소 기준량(LIMITS)에 맞추어 통합 (가구 1000장/100장/100장)
-    LIMITS = {"train": 1000, "val": 100, "test": 100}
+print("새로운 7개 클래스용 YOLO 데이터셋 포맷팅을 시작합니다...")
+# === [통합 데이터셋 처리 코드] 파이프라인 검증용 ===
+# 업로드 최소 기준량(LIMITS)에 맞추어 통합 (가구 1000장/100장/100장)
+LIMITS = {"train": 1000, "val": 100, "test": 100}
 
-    for split in ["train", "val", "test"]:
-        dest_img_dir = YOLO_DIR / "images" / split
-        dest_lbl_dir = YOLO_DIR / "labels" / split
-        dest_img_dir.mkdir(parents=True, exist_ok=True)
-        dest_lbl_dir.mkdir(parents=True, exist_ok=True)
+for split in ["train", "val", "test"]:
+    dest_img_dir = YOLO_DIR / "images" / split
+    dest_lbl_dir = YOLO_DIR / "labels" / split
+    dest_img_dir.mkdir(parents=True, exist_ok=True)
+    dest_lbl_dir.mkdir(parents=True, exist_ok=True)
 
-        src_img_dir = EXTRACT_PATH / "object_layout" / split / "images"
-        src_lbl_dir = EXTRACT_PATH / "object_layout" / split / "labels"
-        if not src_lbl_dir.exists():
+    src_img_dir = EXTRACT_PATH / "object_layout" / split / "images"
+    src_lbl_dir = EXTRACT_PATH / "object_layout" / split / "labels"
+    if not src_lbl_dir.exists():
+        continue
+
+    json_files = list(src_lbl_dir.glob("*.json"))
+
+    # 지정된 마지노선 수량만큼만 랜덤 샘플링
+    if len(json_files) > LIMITS[split]:
+        random.seed(42)  # 재현성 보장
+        json_files = random.sample(json_files, LIMITS[split])
+
+    converted_count = 0
+    for json_file in json_files:
+        base_name = json_file.stem
+        img_file = src_img_dir / f"{base_name}.webp"
+
+        if not img_file.exists():
             continue
 
-        json_files = list(src_lbl_dir.glob("*.json"))
+        with open(json_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            
+        # structural_elements 어노테이션 추가 병합 (문, 창호 데이터 확보)
+        struct_json_file = EXTRACT_PATH / "structural_elements" / split / "labels" / json_file.name
+        if struct_json_file.exists():
+            with open(struct_json_file, "r", encoding="utf-8") as f:
+                struct_data = json.load(f)
+            if "annotations" in struct_data:
+                data.setdefault("annotations", []).extend(struct_data["annotations"])
 
-        # 지정된 마지노선 수량만큼만 랜덤 샘플링
-        if len(json_files) > LIMITS[split]:
-            random.seed(42)  # 재현성 보장
-            json_files = random.sample(json_files, LIMITS[split])
+        if not data.get("images"):
+            continue
 
-        converted_count = 0
-        for json_file in json_files:
-            base_name = json_file.stem
-            img_file = src_img_dir / f"{base_name}.webp"
+        img_info = data["images"][0]
+        img_width = img_info.get("width", 4963)
+        img_height = img_info.get("height", 3509)
 
-            if not img_file.exists():
-                continue
+        yolo_lines = []
+        for ann in data.get("annotations", []):
+            cat_id = ann.get("category_id")
+            if cat_id in CLASS_MAPPING:
+                bbox = ann.get("bbox", [])
+                if len(bbox) == 4:
+                    x_min, y_min, w, h = bbox
+                    x_center_norm = (x_min + (w / 2.0)) / img_width
+                    y_center_norm = (y_min + (h / 2.0)) / img_height
+                    w_norm, h_norm = w / img_width, h / img_height
+                    yolo_lines.append(
+                        f"{CLASS_MAPPING[cat_id]} {x_center_norm:.6f} {y_center_norm:.6f} {w_norm:.6f} {h_norm:.6f}"
+                    )
 
-            with open(json_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        if yolo_lines:
+            dest_txt = dest_lbl_dir / f"{base_name}.txt"
+            with open(dest_txt, "w", encoding="utf-8") as f:
+                f.write("\n".join(yolo_lines))
+            shutil.copy(img_file, dest_img_dir / img_file.name)
+            converted_count += 1
 
-            if not data.get("images"):
-                continue
-
-            img_info = data["images"][0]
-            img_width = img_info.get("width", 4963)
-            img_height = img_info.get("height", 3509)
-
-            yolo_lines = []
-            for ann in data.get("annotations", []):
-                cat_id = ann.get("category_id")
-                if cat_id in CLASS_MAPPING:
-                    bbox = ann.get("bbox", [])
-                    if len(bbox) == 4:
-                        x_min, y_min, w, h = bbox
-                        x_center_norm = (x_min + (w / 2.0)) / img_width
-                        y_center_norm = (y_min + (h / 2.0)) / img_height
-                        w_norm, h_norm = w / img_width, h / img_height
-                        yolo_lines.append(
-                            f"{CLASS_MAPPING[cat_id]} {x_center_norm:.6f} {y_center_norm:.6f} {w_norm:.6f} {h_norm:.6f}"
-                        )
-
-            if yolo_lines:
-                dest_txt = dest_lbl_dir / f"{base_name}.txt"
-                with open(dest_txt, "w", encoding="utf-8") as f:
-                    f.write("\n".join(yolo_lines))
-                shutil.copy(img_file, dest_img_dir / img_file.name)
-                converted_count += 1
-
-        print(f"[{split.upper()} 데이터 변환 완료] {converted_count}장")
-else:
-    print("YOLO 데이터셋이 이미 구성되어 있습니다.")
+    print(f"[{split.upper()} 데이터 변환 완료] {converted_count}장")
 
 # %%
 # dataset.yaml 자동 생성
@@ -235,7 +243,7 @@ dataset_config = {
     "train": "images/train",
     "val": "images/val",
     "test": "images/test",
-    "names": {0: "toilet", 1: "basin", 2: "sink", 3: "bath", 4: "stove"},
+    "names": {0: "toilet", 1: "basin", 2: "sink", 3: "bath", 4: "stove", 5: "door", 6: "window"},
 }
 
 with open(yaml_path, "w", encoding="utf-8") as f:
@@ -893,6 +901,9 @@ for test_image in legacy_images[:5]:
         device="cuda:0" if torch.cuda.is_available() else "cpu",
     )
 
+    # SAHI 시각화 시 한글 깨짐 및 라벨 가림을 방지하기 위해 강제로 카테고리 매핑을 숫자(ID)로 오버라이드
+    detection_model.category_mapping = {str(k): str(k) for k in detection_model.category_mapping.keys()}
+
     # SAHI 슬라이싱 추론
     result = get_sliced_prediction(
         str(enhanced_path),
@@ -920,8 +931,6 @@ for test_image in legacy_images[:5]:
                 ],
             }
         )
-        # 시각화 시 글자 깨짐 및 라벨이 도면을 가리는 현상 방지를 위해 라벨을 숫자 ID로 변경
-        obj.category.name = str(obj.category.id)
 
     json_output_path = PROJECT_ROOT / f"{test_image.stem}_digitized.json"
     with open(json_output_path, "w", encoding="utf-8") as f:
@@ -1002,8 +1011,7 @@ for test_image in legacy_images[:5]:
         export_dir=str(PROJECT_ROOT),
         file_name=f"sahi_{test_image.stem}",
         rect_th=1,  # 바운딩 박스 두께 얇게
-        text_size=0.3,  # 텍스트 크기 작게
-        text_th=1,  # 텍스트 굵기 얇게
+        text_size=0.5,  # 텍스트 크기 조금 키움
         hide_conf=True,  # Confidence score 숨김 (가독성 향상)
     )
     predicted_plot = Image.open(str(PROJECT_ROOT / f"sahi_{test_image.stem}.png"))
@@ -1020,6 +1028,26 @@ for test_image in legacy_images[:5]:
     axes[1].imshow(predicted_plot)
     axes[1].set_title("Enhanced + Prediction (Post-processed)", fontsize=14)
     axes[1].axis("off")
+
+    # 범례(Legend) 예쁘게 추가: 0=toilet, 1=basin 등
+    import matplotlib.patches as mpatches
+    import matplotlib.cm as cm
+    
+    # 클래스 개수에 맞게 색상 팔레트(tab10) 생성
+    cmap = cm.get_cmap('tab10')
+    legend_patches = [
+        mpatches.Patch(color=cmap(k % 10), alpha=0.7, label=f"ID {k} : {v}") 
+        for k, v in class_names.items()
+    ]
+    axes[1].legend(
+        handles=legend_patches, 
+        loc="upper right", 
+        bbox_to_anchor=(1.0, 1.0),
+        title="Class Mapping", 
+        fontsize=10,
+        title_fontsize=12,
+        framealpha=0.9
+    )
 
     plt.tight_layout()
     plt.show()
