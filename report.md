@@ -51,3 +51,21 @@ NVIDIA L40S(VRAM 48GB) 및 RAM 120GB라는 막강한 워크스테이션을 투�
 데이터 무지성 투입이 능사가 아님을 수학적으로 증명하기 위해, 학습 데이터를 `[300, 600, 900, 1200]`장으로 점진적으로 늘려가며 성능을 측정했습니다.
 - **결과**: 데이터가 증가함에 따라 mAP@50 성능이 0.253 ➔ 0.425 ➔ 0.510 ➔ **0.570** 으로 아름다운 우상향 수렴 곡선을 그리는 것을 증명해냈습니다. 
 - 1200장(Train 최대치)에서 과적합 방지(Early Stopping)와 결합하여 최상의 베이스라인 모델을 확립했습니다.
+
+---
+
+## 6. 모델 학습 결과 지표 및 검증 시각화 (Phase 2)
+
+도메인 맞춤형 데이터 증강 기법을 적용한 최종 마스터 모델(`train_augmented`)의 핵심 성능 지표입니다.
+
+### 6.1. 학습 손실(Loss) 및 mAP 수렴 그래프
+안정적으로 Loss가 감소하며, 객체 탐지 성능 지표인 mAP@50 및 mAP@50-95가 뚜렷한 우상향 곡선을 그리는 것을 확인할 수 있습니다.
+![학습 결과 수렴 그래프](/teamspace/studios/this_studio/floorplan-yolo/runs/detect/train_augmented/results.png)
+
+### 6.2. 정규화된 혼동 행렬 (Normalized Confusion Matrix)
+변기, 세면대, 싱크대 등 각 도면 객체별 탐지 정확도(Recall)와 배경(Background) 오탐률을 한눈에 볼 수 있는 매트릭스입니다. 
+![클래스별 혼동 행렬](/teamspace/studios/this_studio/floorplan-yolo/runs/detect/train_augmented/confusion_matrix_normalized.png)
+
+### 6.3. 실제 도면 추론 검증 (Validation Predictions)
+검증(Validation) 데이터셋에 대한 모델의 실제 바운딩 박스 추론(Prediction) 샘플입니다. 도면의 복잡한 선과 기호들 사이에서도 출입문, 창호, 가구 등의 위치를 정확하게 포착해냅니다.
+![검증 추론 결과 샘플](/teamspace/studios/this_studio/floorplan-yolo/runs/detect/train_augmented/val_batch0_pred.jpg)
