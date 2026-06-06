@@ -91,16 +91,22 @@ print("Libraries imported successfully.")
 HARDWARE_PROFILE = "pro"  # <--- 여기서 모드만 바꾸세요!
 
 if HARDWARE_PROFILE == "pro":
-    BASE_WEIGHT = "yolov8m.pt" # (Medium 모델) Nano 대비 압도적 성능, 페이즈 2~4 전체 적용
+    BASE_WEIGHT = (
+        "yolov8m.pt"  # (Medium 모델) Nano 대비 압도적 성능, 페이즈 2~4 전체 적용
+    )
     # VRAM 50GB / RAM 120GB 한도를 고려한 '절대 안 터지는(Anti-OOM)' 최고 효율 세팅
-    BATCH_SIZE = 32            # 64는 간혹 피크치에서 튈 수 있으므로 32로 안정성 확보 (VRAM 약 12~15GB 소모 추정)
-    WORKERS = 8                # RAM(공유 메모리) 폭발을 막기 위해 16 대신 8로 타협
-    print(f"🚀 [PRO 모드 활성화] {BASE_WEIGHT} 가중치 / Batch={BATCH_SIZE} / Workers={WORKERS} (안정성+고속 세팅 완료!)")
+    BATCH_SIZE = 32  # 64는 간혹 피크치에서 튈 수 있으므로 32로 안정성 확보 (VRAM 약 12~15GB 소모 추정)
+    WORKERS = 8  # RAM(공유 메모리) 폭발을 막기 위해 16 대신 8로 타협
+    print(
+        f"🚀 [PRO 모드 활성화] {BASE_WEIGHT} 가중치 / Batch={BATCH_SIZE} / Workers={WORKERS} (안정성+고속 세팅 완료!)"
+    )
 else:
-    BASE_WEIGHT = "yolov8n.pt" # (Nano 모델) VRAM 절약 및 빠른 학습
+    BASE_WEIGHT = "yolov8n.pt"  # (Nano 모델) VRAM 절약 및 빠른 학습
     BATCH_SIZE = 16
     WORKERS = 4
-    print(f"💻 [CONSUMER 모드 활성화] {BASE_WEIGHT} 가중치 및 Batch={BATCH_SIZE}로 안정성 세팅 완료!")
+    print(
+        f"💻 [CONSUMER 모드 활성화] {BASE_WEIGHT} 가중치 및 Batch={BATCH_SIZE}로 안정성 세팅 완료!"
+    )
 
 # %% [markdown]
 # ## 1. 7클래스 마스터 데이터셋 연동 및 압축 해제
@@ -116,8 +122,8 @@ ZIP_NAME = "master_dataset.tar.zst"
 ZIP_PATH = DATA_DIR / ZIP_NAME
 MASTER_DATASET_DIR = DATA_DIR / "master_dataset"
 
-# 사용자 지정 구글 드라이브 링크 (1500장 추출 마스터 데이터셋)
-GDRIVE_FILE_ID = "1lr_ELPmHK-00T1KhVUhjPULcHV4TL8Ms"
+# 사용자 지정 구글 드라이브 링크 (2000장 추출 마스터 데이터셋)
+GDRIVE_FILE_ID = "1wcMWrSVigaX0L43oHR9YaMe4GzTJ_tcc"
 
 if not MASTER_DATASET_DIR.exists():
     # Step 1: 압축파일 확보
@@ -129,10 +135,12 @@ if not MASTER_DATASET_DIR.exists():
                 shutil.copy(str(drive_zip), str(ZIP_PATH))
             else:
                 import gdown
+
                 print(f"구글 드라이브에 파일 없음 → gdown 직접 다운로드 시작...")
                 gdown.download(id=GDRIVE_FILE_ID, output=str(ZIP_PATH), quiet=False)
         else:
             import gdown
+
             print(f"데이터셋({ZIP_NAME}) 다운로드 시작...")
             gdown.download(id=GDRIVE_FILE_ID, output=str(ZIP_PATH), quiet=False)
 
@@ -140,15 +148,23 @@ if not MASTER_DATASET_DIR.exists():
     if ZIP_PATH.exists():
         print(f"{ZIP_NAME} 압축 해제 중...")
         try:
-            subprocess.run(["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(DATA_DIR)], check=True)
+            subprocess.run(
+                ["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(DATA_DIR)],
+                check=True,
+            )
         except Exception as e:
             print("zstd 패키지가 없거나 권한 오류 발생. zstd 설치 시도 중...")
             if IS_COLAB:
                 subprocess.run(["apt-get", "update"], check=True)
                 subprocess.run(["apt-get", "install", "-y", "zstd"], check=True)
-                subprocess.run(["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(DATA_DIR)], check=True)
+                subprocess.run(
+                    ["tar", "-I", "zstd", "-xf", str(ZIP_PATH), "-C", str(DATA_DIR)],
+                    check=True,
+                )
             else:
-                raise RuntimeError("압축 해제 실패: 터미널에서 'sudo apt install zstd' 를 실행 후 다시 시도하세요.")
+                raise RuntimeError(
+                    "압축 해제 실패: 터미널에서 'sudo apt install zstd' 를 실행 후 다시 시도하세요."
+                )
         print("압축 해제 완료!")
     else:
         raise FileNotFoundError(f"⚠️ {ZIP_PATH} 파일을 확보하지 못했습니다.")
@@ -168,7 +184,7 @@ class_names = {
     3: "bathtub",
     4: "gas_stove",
     5: "door",
-    6: "window"
+    6: "window",
 }
 
 dataset_config = {
@@ -187,15 +203,35 @@ print(f"dataset.yaml saved at {yaml_path}")
 # ## 3. 탐색적 데이터 분석 (EDA) 및 시각화 검증
 
 # %%
+# ──────────────────────────────────────────────
+# 🎨 전역 색상 팔레트 (8클래스: 7 마스터 + 1 OCR)
+#    프로젝트 전체에서 동일한 색상 체계를 사용합니다.
+# ──────────────────────────────────────────────
+CLASS_COLOR_MAP = {
+    "toilet": (255, 80, 80),  # 빨강
+    "washbasin": (80, 180, 255),  # 하늘
+    "sink": (80, 220, 120),  # 초록
+    "bathtub": (255, 180, 50),  # 주황
+    "gas_stove": (180, 80, 255),  # 보라
+    "door": (255, 220, 50),  # 노랑
+    "window": (50, 220, 220),  # 시안(청록)
+    "text": (255, 120, 200),  # 핑크
+}
+
+import matplotlib.patches as mpatches
+
+
 def visualize_yolo_labels(image_path, label_path, class_names):
-    img = Image.open(image_path).convert("RGB")
-    draw = ImageDraw.Draw(img)
-    w, h = img.size
-    colors = ["red", "blue", "green", "orange", "purple", "cyan", "magenta"]
+    img = cv2.imread(str(image_path))
+    if img is None:
+        return
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    h, w = img.shape[:2]
 
     if not os.path.exists(label_path):
         return img
 
+    counts = {}
     with open(label_path, "r") as f:
         lines = f.readlines()
 
@@ -210,11 +246,13 @@ def visualize_yolo_labels(image_path, label_path, class_names):
         x_min, y_min = int(x_center - box_w / 2), int(y_center - box_h / 2)
         x_max, y_max = int(x_center + box_w / 2), int(y_center + box_h / 2)
 
-        color = colors[class_id % len(colors)]
-        draw.rectangle([x_min, y_min, x_max, y_max], outline=color, width=6)
-        draw.text((x_min + 5, y_min - 25), class_names.get(class_id, str(class_id)), fill=color)
+        cls_name = class_names.get(class_id, str(class_id))
+        color = CLASS_COLOR_MAP.get(cls_name, (200, 200, 200))
+        cv2.rectangle(img, (x_min, y_min), (x_max, y_max), color, 4)
+        counts[cls_name] = counts.get(cls_name, 0) + 1
 
-    return img
+    return img, counts
+
 
 train_img_dir = MASTER_DATASET_DIR / "images" / "train"
 train_lbl_dir = MASTER_DATASET_DIR / "labels" / "train"
@@ -226,16 +264,40 @@ if train_img_dir.exists():
         sample_lbl = train_lbl_dir / (sample_img.stem + ".txt")
 
         print(f"Visualizing Sample: {sample_img.name}")
-        result_img = visualize_yolo_labels(sample_img, sample_lbl, class_names)
+        result = visualize_yolo_labels(sample_img, sample_lbl, class_names)
+        if result is not None:
+            result_img, counts = result
+            fig, ax = plt.subplots(1, 1, figsize=(14, 9))
+            ax.imshow(result_img)
+            ax.axis("off")
+            ax.set_title(
+                f"EDA Sample: {sample_img.name}", fontsize=13, fontweight="bold"
+            )
 
-        plt.figure(figsize=(12, 8))
-        plt.imshow(result_img)
-        plt.axis("off")
-        plt.show()
+            # 범례
+            legend_patches = []
+            for cls_name, color_rgb in CLASS_COLOR_MAP.items():
+                cnt = counts.get(cls_name, 0)
+                if cnt > 0:
+                    color_norm = tuple(c / 255.0 for c in color_rgb)
+                    legend_patches.append(
+                        mpatches.Patch(color=color_norm, label=f"{cls_name} ({cnt})")
+                    )
+            if legend_patches:
+                ax.legend(
+                    handles=legend_patches,
+                    loc="upper right",
+                    fontsize=10,
+                    framealpha=0.85,
+                    fancybox=True,
+                    shadow=True,
+                )
+            plt.tight_layout()
+            plt.show()
 
 # %% [markdown]
 # ## 4. [Phase 1] 최적의 데이터 개수 탐색 (Data Scaling Ablation)
-# - 학습 데이터 개수를 300장부터 1200장(최대치)까지 점진적으로 늘려보며 성능 향상폭이 꺾이는 지점(Saturation Point)을 찾습니다.
+# - 학습 데이터 개수를 300장부터 1500장까지 점진적으로 늘려보며 성능 향상폭이 꺾이는 지점(Saturation Point)을 찾습니다.
 
 # %%
 print("=" * 60)
@@ -243,8 +305,8 @@ print("🔬 [Phase 1] Data Size Ablation")
 print("=" * 60)
 
 train_images = list((MASTER_DATASET_DIR / "images" / "train").glob("*.webp"))
-# 총 1200장의 훈련셋을 활용하여 점진적 크기 실험
-data_sizes = [300, 600, 900, 1200]
+# 총 1600장의 훈련셋을 활용하여 점진적 크기 실험
+data_sizes = [300, 600, 900, 1200, 1500]
 scaling_results = {}
 
 for size in data_sizes:
@@ -281,7 +343,7 @@ for size in data_sizes:
         project=str(PROJECT_ROOT / "runs/detect"),
         name=f"train_size_{size}",
         verbose=False,
-        patience=10, # 과적합 방지 조기 종료
+        patience=10,  # 과적합 방지 조기 종료
     )
 
     torch.cuda.empty_cache()
@@ -301,7 +363,13 @@ if scaling_results:
     plt.ylabel("mAP@50", fontsize=12)
     plt.grid(True)
     for i, txt in enumerate(maps):
-        plt.annotate(f"{txt:.3f}", (sizes[i], maps[i]), textcoords="offset points", xytext=(0, 10), ha="center")
+        plt.annotate(
+            f"{txt:.3f}",
+            (sizes[i], maps[i]),
+            textcoords="offset points",
+            xytext=(0, 10),
+            ha="center",
+        )
     plt.show()
 
 # %% [markdown]
@@ -315,47 +383,61 @@ print("=" * 60)
 
 # 1. Baseline (순정 학습)
 print("🚀 Baseline 모델 학습 시작...")
-model_baseline = YOLO(BASE_WEIGHT)
-results_baseline = model_baseline.train(
-    data=str(MASTER_DATASET_DIR / "dataset.yaml"),
-    epochs=150, # 7클래스 난이도 상승 반영
-    imgsz=640,
-    batch=BATCH_SIZE,
-    workers=WORKERS,
-    cache=True,
-    project=str(PROJECT_ROOT / "runs/detect"),
-    name="train_baseline",
-    patience=20, # 성능 개선 없으면 20에폭 후 조기 종료
-)
-torch.cuda.empty_cache()
-gc.collect()
+baseline_weight = PROJECT_ROOT / "runs/detect/train_baseline/weights/best.pt"
+if baseline_weight.exists():
+    print(
+        f"✅ 이미 학습된 Baseline 모델 가중치가 존재합니다. 학습을 스킵합니다: {baseline_weight}"
+    )
+else:
+    model_baseline = YOLO(BASE_WEIGHT)
+    results_baseline = model_baseline.train(
+        data=str(MASTER_DATASET_DIR / "dataset.yaml"),
+        epochs=150,  # 7클래스 난이도 상승 반영
+        imgsz=640,
+        batch=BATCH_SIZE,
+        workers=WORKERS,
+        cache=True,
+        project=str(PROJECT_ROOT / "runs/detect"),
+        name="train_baseline",
+        patience=20,  # 성능 개선 없으면 20에폭 후 조기 종료
+    )
+    torch.cuda.empty_cache()
+    gc.collect()
 
 # 2. Augmented (도메인 맞춤형 증강 학습)
 print("\n🚀 Augmented 모델 학습 시작...")
-model_augmented = YOLO(BASE_WEIGHT)
-results_augmented = model_augmented.train(
-    data=str(MASTER_DATASET_DIR / "dataset.yaml"),
-    epochs=150, # 7클래스 난이도 상승 반영
-    imgsz=640,
-    batch=BATCH_SIZE,
-    workers=WORKERS,
-    cache=True,
-    project=str(PROJECT_ROOT / "runs/detect"),
-    name="train_augmented",
-    patience=20, # 성능 개선 없으면 20에폭 후 조기 종료
-    # 도메인 갭(Domain Gap) 극복을 위한 파라미터 (레거시 도면 타겟팅)
-    degrees=2.0,       # 스캐너 수작업 오차
-    hsv_s=0.2, hsv_v=0.2, # 황변 현상 및 퇴색
-    perspective=0.0005,
-    scale=0.5,
-    mosaic=1.0,
-)
-torch.cuda.empty_cache()
-gc.collect()
+aug_weight = PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
+if aug_weight.exists():
+    print(
+        f"✅ 이미 학습된 Augmented 모델 가중치가 존재합니다. 학습을 스킵합니다: {aug_weight}"
+    )
+else:
+    model_augmented = YOLO(BASE_WEIGHT)
+    results_augmented = model_augmented.train(
+        data=str(MASTER_DATASET_DIR / "dataset.yaml"),
+        epochs=150,  # 7클래스 난이도 상승 반영
+        imgsz=640,
+        batch=BATCH_SIZE,
+        workers=WORKERS,
+        cache=True,
+        project=str(PROJECT_ROOT / "runs/detect"),
+        name="train_augmented",
+        patience=20,  # 성능 개선 없으면 20에폭 후 조기 종료
+        # 도메인 갭(Domain Gap) 극복을 위한 파라미터 (레거시 도면 타겟팅)
+        degrees=2.0,  # 스캐너 수작업 오차
+        hsv_s=0.2,
+        hsv_v=0.2,  # 황변 현상 및 퇴색
+        perspective=0.0005,
+        scale=0.5,
+        mosaic=1.0,
+    )
+    torch.cuda.empty_cache()
+    gc.collect()
 
 # %% [markdown]
 # ## 6. [Phase 2-B] Simulated Legacy Test Set 기반 재평가
 # - 기존 val/test 셋은 깨끗한 도면이므로, 인위적 노이즈를 추가해 레거시 환경을 모사한 후 Augmented 모델의 실전 우위를 증명합니다.
+
 
 # %%
 def simulate_legacy_degradation(img):
@@ -372,6 +454,7 @@ def simulate_legacy_degradation(img):
     img = cv2.GaussianBlur(img, (3, 3), 1.0)
     return img
 
+
 legacy_test_img_dir = MASTER_DATASET_DIR / "images" / "legacy_test"
 legacy_test_lbl_dir = MASTER_DATASET_DIR / "labels" / "legacy_test"
 legacy_test_img_dir.mkdir(parents=True, exist_ok=True)
@@ -380,7 +463,8 @@ legacy_test_lbl_dir.mkdir(parents=True, exist_ok=True)
 test_images = list((MASTER_DATASET_DIR / "images" / "test").glob("*.webp"))
 for img_path in test_images:
     img = cv2.imread(str(img_path))
-    if img is None: continue
+    if img is None:
+        continue
     degraded = simulate_legacy_degradation(img)
     cv2.imwrite(str(legacy_test_img_dir / (img_path.stem + ".jpg")), degraded)
     lbl_src = MASTER_DATASET_DIR / "labels" / "test" / (img_path.stem + ".txt")
@@ -389,12 +473,16 @@ for img_path in test_images:
 
 legacy_yaml_path = MASTER_DATASET_DIR / "dataset_legacy_test.yaml"
 with open(legacy_yaml_path, "w", encoding="utf-8") as f:
-    yaml.dump({
-        "path": str(MASTER_DATASET_DIR.resolve()),
-        "train": "images/train",
-        "val": "images/legacy_test",
-        "names": class_names,
-    }, f, allow_unicode=True)
+    yaml.dump(
+        {
+            "path": str(MASTER_DATASET_DIR.resolve()),
+            "train": "images/train",
+            "val": "images/legacy_test",
+            "names": class_names,
+        },
+        f,
+        allow_unicode=True,
+    )
 
 print("\n📊 Augmented 모델 → Legacy Test Set 평가")
 aug_weight = PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
@@ -412,85 +500,278 @@ print("=" * 60)
 print("🚀 [Phase 3] OCR 텍스트 탐지용 전이학습 (Transfer Learning) 시작")
 print("=" * 60)
 
-# (주의: 사용자가 별도의 OCR 데이터셋을 ocr_dataset 폴더에 준비해두었다고 가정합니다.)
-# ocr_dataset.yaml은 클래스 0 (text) 단일 구조를 가져야 합니다.
+# ──────────────────────────────────────────────
+# OCR 데이터셋 자동 다운로드 및 압축 해제
+# ──────────────────────────────────────────────
+OCR_ZIP_NAME = "ocr_dataset.tar.zst"
+OCR_ZIP_PATH = DATA_DIR / OCR_ZIP_NAME
 OCR_DIR = DATA_DIR / "ocr_dataset"
+OCR_GDRIVE_FILE_ID = "1D2BYVBNArwoMTgqVO0m8ZOUxEJZeuLxE"
+
+if not OCR_DIR.exists():
+    if not OCR_ZIP_PATH.exists():
+        if IS_COLAB:
+            drive_ocr = Path(f"/content/drive/MyDrive/{OCR_ZIP_NAME}")
+            if drive_ocr.exists():
+                print(f"구글 드라이브에서 {OCR_ZIP_NAME} 복사 중...")
+                shutil.copy(str(drive_ocr), str(OCR_ZIP_PATH))
+            else:
+                import gdown
+                print(f"구글 드라이브에 파일 없음 → gdown 직접 다운로드 시작...")
+                gdown.download(id=OCR_GDRIVE_FILE_ID, output=str(OCR_ZIP_PATH), quiet=False)
+        else:
+            import gdown
+            print(f"OCR 데이터셋({OCR_ZIP_NAME}) 다운로드 시작...")
+            gdown.download(id=OCR_GDRIVE_FILE_ID, output=str(OCR_ZIP_PATH), quiet=False)
+
+    if OCR_ZIP_PATH.exists():
+        print(f"{OCR_ZIP_NAME} 압축 해제 중...")
+        try:
+            subprocess.run(
+                ["tar", "-I", "zstd", "-xf", str(OCR_ZIP_PATH), "-C", str(DATA_DIR)],
+                check=True,
+            )
+        except Exception:
+            print("zstd 패키지가 없거나 권한 오류 발생. zstd 설치 시도 중...")
+            if IS_COLAB:
+                subprocess.run(["apt-get", "update"], check=True)
+                subprocess.run(["apt-get", "install", "-y", "zstd"], check=True)
+                subprocess.run(
+                    ["tar", "-I", "zstd", "-xf", str(OCR_ZIP_PATH), "-C", str(DATA_DIR)],
+                    check=True,
+                )
+            else:
+                raise RuntimeError("압축 해제 실패: 터미널에서 'sudo apt install zstd' 를 실행 후 다시 시도하세요.")
+        print("OCR 데이터셋 압축 해제 완료!")
+    else:
+        raise FileNotFoundError(f"⚠️ {OCR_ZIP_PATH} 파일을 확보하지 못했습니다.")
+else:
+    print(f"OCR Dataset ready at {OCR_DIR}")
+
 ocr_yaml_path = OCR_DIR / "dataset.yaml"
 
 if not ocr_yaml_path.exists():
-    print("⚠️ OCR 데이터셋 폴더(ocr_dataset)를 찾을 수 없습니다.")
-    print("AI 허브의 TL_OCR 데이터를 다운받아 YOLO 형식(class: 0 text)으로 변환 후 재시도해주세요.")
+    print("⚠️ OCR 데이터셋의 dataset.yaml을 찾을 수 없습니다. 데이터셋을 확인해주세요.")
 else:
     # 7클래스 마스터 모델의 황금 가중치 로드
     best_weight_path = PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
-    
-    if not best_weight_path.exists():
-        raise FileNotFoundError(f"⚠️ 전이학습을 위한 가중치({best_weight_path})가 없습니다. Phase 2 학습을 먼저 완료하세요.")
 
-    print(f"✅ {best_weight_path.name} 가중치를 성공적으로 불러왔습니다. 전이학습을 시작합니다!")
-    
-    # 전이학습(Transfer Learning)
-    model_transfer = YOLO(str(best_weight_path))
-    results_transfer = model_transfer.train(
-        data=str(ocr_yaml_path),
-        epochs=50,      # 클래스가 1개지만 견고한 학습을 위해 에폭 상향
-        imgsz=640,
-        batch=BATCH_SIZE,
-        workers=WORKERS,
-        cache=True,
-        project=str(PROJECT_ROOT / "runs/detect"),
-        name="train_ocr_transfer",
-        patience=10,
+    if not best_weight_path.exists():
+        raise FileNotFoundError(
+            f"⚠️ 전이학습을 위한 가중치({best_weight_path})가 없습니다. Phase 2 학습을 먼저 완료하세요."
+        )
+
+    print(
+        f"✅ {best_weight_path.name} 가중치를 성공적으로 불러왔습니다. 전이학습을 시작합니다!"
     )
-    
-    torch.cuda.empty_cache()
-    gc.collect()
-    print("🎉 OCR 전이학습이 성공적으로 완료되었습니다!")
+
+    ocr_transfer_weight = (
+        PROJECT_ROOT / "runs/detect/train_ocr_transfer/weights/best.pt"
+    )
+    if ocr_transfer_weight.exists():
+        print(
+            f"✅ 이미 학습된 OCR 전이학습 가중치가 존재합니다. 학습을 스킵합니다: {ocr_transfer_weight}"
+        )
+    else:
+        # 전이학습(Transfer Learning)
+        model_transfer = YOLO(str(best_weight_path))
+        results_transfer = model_transfer.train(
+            data=str(ocr_yaml_path),
+            epochs=50,  # 클래스가 1개지만 견고한 학습을 위해 에폭 상향
+            imgsz=640,
+            batch=BATCH_SIZE,
+            workers=WORKERS,
+            cache=True,
+            project=str(PROJECT_ROOT / "runs/detect"),
+            name="train_ocr_transfer",
+            patience=10,
+        )
+
+        torch.cuda.empty_cache()
+        gc.collect()
+        print("🎉 OCR 전이학습이 성공적으로 완료되었습니다!")
 
 # %% [markdown]
-# ## 8. [Phase 4] 실전 도면 추론 파이프라인 (Inference)
-# - SAHI 슬라이싱을 이용해 구형 레거시 도면에서 놓치는 객체 없이 꼼꼼하게 검출합니다.
+# ## 8. [Phase 4] 실전 도면 추론 파이프라인 (Ensemble Inference)
+# - 7클래스 마스터 모델과 OCR 전이학습 모델을 **앙상블(Ensemble)** 방식으로 결합합니다.
+# - 도면 한 장에 대해 두 모델을 순차적으로 돌리고 결과 BBox를 하나의 캔버스에 병합합니다.
+# - SAHI 슬라이싱을 적용하여 고해상도 도면에서도 작은 객체를 놓치지 않습니다.
 
 # %%
 from sahi import AutoDetectionModel
 from sahi.predict import get_sliced_prediction
+import matplotlib.patches as mpatches
 
-def run_sahi_inference(image_path, model_path):
-    print(f"[{Path(image_path).name}] SAHI 추론 시작...")
-    
-    if not os.path.exists(model_path):
-        print(f"⚠️ 모델 가중치가 없습니다: {model_path}")
+# ──────────────────────────────────────────────
+# 🎨 전역 색상 팔레트 (8클래스: 7 마스터 + 1 OCR)
+# ──────────────────────────────────────────────
+CLASS_COLOR_MAP = {
+    "toilet": (255, 80, 80),  # 빨강
+    "washbasin": (80, 180, 255),  # 하늘
+    "sink": (80, 220, 120),  # 초록
+    "bathtub": (255, 180, 50),  # 주황
+    "gas_stove": (180, 80, 255),  # 보라
+    "door": (255, 220, 50),  # 노랑
+    "window": (50, 220, 220),  # 시안(청록)
+    "text": (255, 120, 200),  # 핑크
+}
+
+# YOLO 학습 순서 ID → 클래스 이름
+MASTER_ID_TO_NAME = {
+    0: "toilet",
+    1: "washbasin",
+    2: "sink",
+    3: "bathtub",
+    4: "gas_stove",
+    5: "door",
+    6: "window",
+}
+
+
+def draw_colored_boxes(img_cv2, predictions, id_to_name_map):
+    """
+    OpenCV 이미지 위에 색상-코딩된 BBox를 그리고,
+    각 클래스별 탐지 횟수를 반환합니다.
+    """
+    counts = {}
+    for pred in predictions:
+        cat_name = id_to_name_map.get(pred.category.id, pred.category.name)
+        color = CLASS_COLOR_MAP.get(cat_name, (200, 200, 200))
+        bbox = pred.bbox.to_xyxy()
+        x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
+        cv2.rectangle(img_cv2, (x1, y1), (x2, y2), color, 3)
+        counts[cat_name] = counts.get(cat_name, 0) + 1
+    return img_cv2, counts
+
+
+def run_ensemble_sahi_inference(image_path, master_model_path, ocr_model_path):
+    """두 모델(7cls + OCR)의 SAHI 추론 결과를 하나의 이미지로 병합합니다."""
+    print(f"\n{'=' * 60}")
+    print(f"[{Path(image_path).name}] 🚀 SAHI 앙상블 추론 시작")
+    print(f"{'=' * 60}")
+
+    if not os.path.exists(master_model_path):
+        print(f"⚠️ 7클래스 마스터 가중치가 없습니다: {master_model_path}")
         return
-        
-    detection_model = AutoDetectionModel.from_pretrained(
+    if not os.path.exists(ocr_model_path):
+        print(f"⚠️ OCR 전이학습 가중치가 없습니다: {ocr_model_path}")
+        return
+
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    # ── 1. 7클래스 마스터 모델 추론 ──
+    print("🔍 [1/2] 7클래스(가구/구조물) 탐지 중...")
+    master_det = AutoDetectionModel.from_pretrained(
         model_type="yolov8",
-        model_path=model_path,
+        model_path=master_model_path,
         confidence_threshold=0.25,
-        device="cuda:0" if torch.cuda.is_available() else "cpu",
+        device=device,
     )
-    
-    # 카테고리 매핑 강제 변환 (한글/깨짐 방지)
-    detection_model.category_mapping = {str(k): str(k) for k in detection_model.category_mapping.keys()}
-    
-    result = get_sliced_prediction(
+    master_result = get_sliced_prediction(
         str(image_path),
-        detection_model,
+        master_det,
         slice_height=512,
         slice_width=512,
         overlap_height_ratio=0.2,
         overlap_width_ratio=0.2,
     )
-    
-    # 시각화
-    plt.figure(figsize=(10, 10))
-    plt.imshow(result.image)
-    plt.axis("off")
+
+    # ── 2. OCR 모델 추론 ──
+    print("🔍 [2/2] OCR(텍스트 영역) 탐지 중...")
+    ocr_det = AutoDetectionModel.from_pretrained(
+        model_type="yolov8",
+        model_path=ocr_model_path,
+        confidence_threshold=0.25,
+        device=device,
+    )
+    ocr_result = get_sliced_prediction(
+        str(image_path),
+        ocr_det,
+        slice_height=512,
+        slice_width=512,
+        overlap_height_ratio=0.2,
+        overlap_width_ratio=0.2,
+    )
+
+    # ── 3. 캔버스에 앙상블 그리기 ──
+    print("✨ 두 모델의 결과를 하나의 캔버스에 병합합니다...")
+    img_cv2 = cv2.imread(str(image_path))
+    img_cv2 = cv2.cvtColor(img_cv2, cv2.COLOR_BGR2RGB)
+
+    # 마스터 모델 결과 그리기
+    img_cv2, master_counts = draw_colored_boxes(
+        img_cv2, master_result.object_prediction_list, MASTER_ID_TO_NAME
+    )
+    # OCR 모델 결과 그리기 (text 클래스)
+    ocr_id_map = {0: "text"}
+    img_cv2, ocr_counts = draw_colored_boxes(
+        img_cv2, ocr_result.object_prediction_list, ocr_id_map
+    )
+
+    all_counts = {**master_counts, **ocr_counts}
+
+    # ── 4. matplotlib으로 색상 범례(Legend) 포함 시각화 ──
+    fig, ax = plt.subplots(1, 1, figsize=(16, 12))
+    ax.imshow(img_cv2)
+    ax.axis("off")
+    ax.set_title(
+        f"Ensemble Detection: {Path(image_path).name}", fontsize=14, fontweight="bold"
+    )
+
+    # 범례 패치 생성 (탐지된 클래스만)
+    legend_patches = []
+    for cls_name, color_rgb in CLASS_COLOR_MAP.items():
+        cnt = all_counts.get(cls_name, 0)
+        if cnt > 0:
+            color_norm = tuple(c / 255.0 for c in color_rgb)
+            legend_patches.append(
+                mpatches.Patch(color=color_norm, label=f"{cls_name} ({cnt})")
+            )
+    if legend_patches:
+        ax.legend(
+            handles=legend_patches,
+            loc="upper right",
+            fontsize=10,
+            framealpha=0.85,
+            fancybox=True,
+            shadow=True,
+        )
+
+    plt.tight_layout()
+
+    # 결과 저장
+    export_dir = PROJECT_ROOT / "runs" / "inference"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    save_path = export_dir / (Path(image_path).stem + "_ensemble.png")
+    fig.savefig(str(save_path), dpi=150, bbox_inches="tight")
     plt.show()
 
-# 사용자가 raw_legacy_inputs에 넣은 실제 도면 중 하나로 테스트
+    # 탐지 요약 출력
+    total = sum(all_counts.values())
+    print(f"\n📊 탐지 요약 (총 {total}개 객체):")
+    for cls_name, cnt in sorted(all_counts.items(), key=lambda x: -x[1]):
+        print(f"   • {cls_name}: {cnt}개")
+    print(f"\n✅ 결과 이미지 저장 완료: {save_path}")
+
+
+# ── 실행부 ──
 RAW_LEGACY_DIR = PROJECT_ROOT / "raw_legacy_inputs"
 if RAW_LEGACY_DIR.exists():
-    test_images = list(RAW_LEGACY_DIR.glob("*.jpg")) + list(RAW_LEGACY_DIR.glob("*.png"))
+    test_images = (
+        list(RAW_LEGACY_DIR.glob("*.jpg"))
+        + list(RAW_LEGACY_DIR.glob("*.png"))
+        + list(RAW_LEGACY_DIR.glob("*.webp"))
+    )
     if test_images:
-        best_model_path = str(PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt")
-        run_sahi_inference(test_images[0], best_model_path)
+        best_master_path = str(
+            PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
+        )
+        best_ocr_path = str(
+            PROJECT_ROOT / "runs/detect/train_ocr_transfer/weights/best.pt"
+        )
+        for img_path in test_images:
+            run_ensemble_sahi_inference(img_path, best_master_path, best_ocr_path)
+    else:
+        print("⚠️ raw_legacy_inputs 폴더에 테스트할 도면 이미지가 없습니다.")
+else:
+    print("⚠️ raw_legacy_inputs 폴더가 존재하지 않습니다. 테스트할 도면을 넣어주세요.")
