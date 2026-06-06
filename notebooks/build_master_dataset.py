@@ -18,7 +18,7 @@ IMG_DIR = EXTRACT_PATH / '01.원천데이터'
 LBL_DIR = EXTRACT_PATH / '02.라벨링데이터'
 
 CLASS_MAPPING = {4: 0, 5: 1, 6: 2, 7: 3, 8: 4, 9: 5, 10: 6}
-TARGET_COUNT = 1500
+TARGET_COUNT = 2000
 
 def get_all_zip_signatures(folder_path, prefix):
     sigs = {}
