@@ -332,7 +332,9 @@ for size in data_sizes:
         )
 
     print(f"\n🚀 Data Size: {size} 학습 시작 (30 Epochs 검증)")
-    model_size = YOLO(BASE_WEIGHT)
+    # Phase 1은 데이터 개수 트렌드(포화점) 탐색이 목적이므로
+    # 속도가 빠른 Nano 모델 고정 사용 (절대 mAP보다 상대 추이가 중요)
+    model_size = YOLO("yolov8n.pt")
     res_size = model_size.train(
         data=str(yaml_path_size),
         epochs=30,
@@ -517,10 +519,14 @@ if not OCR_DIR.exists():
                 shutil.copy(str(drive_ocr), str(OCR_ZIP_PATH))
             else:
                 import gdown
+
                 print(f"구글 드라이브에 파일 없음 → gdown 직접 다운로드 시작...")
-                gdown.download(id=OCR_GDRIVE_FILE_ID, output=str(OCR_ZIP_PATH), quiet=False)
+                gdown.download(
+                    id=OCR_GDRIVE_FILE_ID, output=str(OCR_ZIP_PATH), quiet=False
+                )
         else:
             import gdown
+
             print(f"OCR 데이터셋({OCR_ZIP_NAME}) 다운로드 시작...")
             gdown.download(id=OCR_GDRIVE_FILE_ID, output=str(OCR_ZIP_PATH), quiet=False)
 
@@ -537,11 +543,21 @@ if not OCR_DIR.exists():
                 subprocess.run(["apt-get", "update"], check=True)
                 subprocess.run(["apt-get", "install", "-y", "zstd"], check=True)
                 subprocess.run(
-                    ["tar", "-I", "zstd", "-xf", str(OCR_ZIP_PATH), "-C", str(DATA_DIR)],
+                    [
+                        "tar",
+                        "-I",
+                        "zstd",
+                        "-xf",
+                        str(OCR_ZIP_PATH),
+                        "-C",
+                        str(DATA_DIR),
+                    ],
                     check=True,
                 )
             else:
-                raise RuntimeError("압축 해제 실패: 터미널에서 'sudo apt install zstd' 를 실행 후 다시 시도하세요.")
+                raise RuntimeError(
+                    "압축 해제 실패: 터미널에서 'sudo apt install zstd' 를 실행 후 다시 시도하세요."
+                )
         print("OCR 데이터셋 압축 해제 완료!")
     else:
         raise FileNotFoundError(f"⚠️ {OCR_ZIP_PATH} 파일을 확보하지 못했습니다.")
