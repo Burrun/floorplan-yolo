@@ -1,15 +1,10 @@
 # Dataset and weights
 *.zip
-*.tar.zst
 content/
-*.pt
 data/
+notebooks/yolo*.pt
 
-# Generated outputs (학습 결과, 추론 결과)
-runs/
-enhanced_*.jpg
-sahi_*.png
-*_digitized*.json
+
 
 # Python and virtual environments
 __pycache__/

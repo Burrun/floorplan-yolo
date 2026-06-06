@@ -69,6 +69,9 @@ else:
         PROJECT_ROOT = _cwd
     print(f"[로컬] 프로젝트 루트: {PROJECT_ROOT}")
 
+# YOLO 환경 변수 강제 설정 (절대 경로 및 노트북 내 폴더 생성 방지)
+from ultralytics import settings
+settings.update({'datasets_dir': str(PROJECT_ROOT / 'data'), 'runs_dir': str(PROJECT_ROOT / 'runs')})
 # GPU 정보 출력
 if torch.cuda.is_available():
     gpu_name = torch.cuda.get_device_name(0)
@@ -304,6 +307,8 @@ print("=" * 60)
 print("🔬 [Phase 1] Data Size Ablation")
 print("=" * 60)
 
+import pandas as pd
+
 train_images = list((MASTER_DATASET_DIR / "images" / "train").glob("*.webp"))
 # 총 1600장의 훈련셋을 활용하여 점진적 크기 실험
 data_sizes = [300, 600, 900, 1200, 1500]
@@ -331,7 +336,23 @@ for size in data_sizes:
             allow_unicode=True,
         )
 
-    print(f"\n🚀 Data Size: {size} 학습 시작 (30 Epochs 검증)")
+    weight_path = PROJECT_ROOT / "runs/detect" / f"train_size_{size}" / "weights" / "best.pt"
+    if weight_path.exists():
+        print(f"\n ✅ Data Size: {size} - 이미 학습된 가중치가 존재합니다. 학습을 스킵합니다.")
+        results_csv = PROJECT_ROOT / "runs/detect" / f"train_size_{size}" / "results.csv"
+        if results_csv.exists():
+            df = pd.read_csv(results_csv)
+            df.columns = df.columns.str.strip()
+            col_name = "metrics/mAP50(B)"
+            if col_name in df.columns:
+                scaling_results[size] = df[col_name].iloc[-1]
+            else:
+                scaling_results[size] = 0.0
+        else:
+            scaling_results[size] = 0.0
+        continue
+
+    print(f"\n Data Size: {size} 학습 시작 (30 Epochs 검증)")
     # Phase 1은 데이터 개수 트렌드(포화점) 탐색이 목적이므로
     # 속도가 빠른 Nano 모델 고정 사용 (절대 mAP보다 상대 추이가 중요)
     model_size = YOLO("yolov8n.pt")
@@ -373,6 +394,7 @@ if scaling_results:
             ha="center",
         )
     plt.show()
+
 
 # %% [markdown]
 # ## 5. [Phase 2] 도메인 맞춤형 증강 탐색 (Baseline vs Augmented)
@@ -463,15 +485,19 @@ legacy_test_img_dir.mkdir(parents=True, exist_ok=True)
 legacy_test_lbl_dir.mkdir(parents=True, exist_ok=True)
 
 test_images = list((MASTER_DATASET_DIR / "images" / "test").glob("*.webp"))
-for img_path in test_images:
-    img = cv2.imread(str(img_path))
-    if img is None:
-        continue
-    degraded = simulate_legacy_degradation(img)
-    cv2.imwrite(str(legacy_test_img_dir / (img_path.stem + ".jpg")), degraded)
-    lbl_src = MASTER_DATASET_DIR / "labels" / "test" / (img_path.stem + ".txt")
-    if lbl_src.exists():
-        shutil.copy(lbl_src, legacy_test_lbl_dir / lbl_src.name)
+if list(legacy_test_img_dir.glob("*.jpg")):
+    print("✅ Legacy Test Set이 이미 존재하여 생성을 건너뜁니다.")
+else:
+    print("⏳ Legacy test set 생성 중...")
+    for img_path in test_images:
+        img = cv2.imread(str(img_path))
+        if img is None:
+            continue
+        degraded = simulate_legacy_degradation(img)
+        cv2.imwrite(str(legacy_test_img_dir / (img_path.stem + ".jpg")), degraded)
+        lbl_src = MASTER_DATASET_DIR / "labels" / "test" / (img_path.stem + ".txt")
+        if lbl_src.exists():
+            shutil.copy(lbl_src, legacy_test_lbl_dir / lbl_src.name)
 
 legacy_yaml_path = MASTER_DATASET_DIR / "dataset_legacy_test.yaml"
 with open(legacy_yaml_path, "w", encoding="utf-8") as f:
