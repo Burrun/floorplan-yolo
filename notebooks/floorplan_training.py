@@ -263,9 +263,10 @@ train_lbl_dir = MASTER_DATASET_DIR / "labels" / "train"
 if train_img_dir.exists():
     img_files = list(train_img_dir.glob("*.webp"))
     if img_files:
-        # EDA 재현성을 위해 샘플 고정
+          # EDA 재현성을 위해 샘플 고정
         _fixed = train_img_dir / "master_train_0204.webp"
         sample_img = _fixed if _fixed.exists() else img_files[0]
+        sample_img = random.choice(img_files)
         sample_lbl = train_lbl_dir / (sample_img.stem + ".txt")
 
         print(f"Visualizing Sample: {sample_img.name}")
@@ -400,7 +401,7 @@ if scaling_results:
 
 # %% [markdown]
 # ## 5. [Phase 2] 도메인 맞춤형 증강 탐색 (Baseline vs Augmented)
-# - 최적의 데이터 개수(최대치 1500장)를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
+# - 최적의 데이터 개수(최대치 1200장)를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
 
 # %%
 print("=" * 60)
