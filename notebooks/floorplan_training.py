@@ -487,24 +487,26 @@ def augment_with_rotations(img_files, src_lbl_dir, dst_img_dir, dst_lbl_dir):
             with open(lbl_path, "r") as f:
                 label_lines = f.readlines()
 
-        for angle in angles:
-            # Rotate image
-            rotated = cv2.rotate(img, rot_codes[angle])
-            rot_name = f"{stem}_rot{angle}.webp"
-            cv2.imwrite(str(dst_img_dir / rot_name), rotated)
+        # Select ONE random angle instead of all 3 to save training time
+        angle = random.choice(angles)
 
-            # Rotate labels
-            rot_lbl_name = f"{stem}_rot{angle}.txt"
-            with open(dst_lbl_dir / rot_lbl_name, "w") as f:
-                for line in label_lines:
-                    parts = line.strip().split()
-                    if len(parts) < 5:
-                        continue
-                    cls_id = parts[0]
-                    cx, cy, w, h = map(float, parts[1:5])
-                    ncx, ncy, nw, nh = rotate_yolo_label(cx, cy, w, h, angle)
-                    f.write(f"{cls_id} {ncx:.6f} {ncy:.6f} {nw:.6f} {nh:.6f}\n")
-            total += 1
+        # Rotate image
+        rotated = cv2.rotate(img, rot_codes[angle])
+        rot_name = f"{stem}_rot{angle}.webp"
+        cv2.imwrite(str(dst_img_dir / rot_name), rotated)
+
+        # Rotate labels
+        rot_lbl_name = f"{stem}_rot{angle}.txt"
+        with open(dst_lbl_dir / rot_lbl_name, "w") as f:
+            for line in label_lines:
+                parts = line.strip().split()
+                if len(parts) < 5:
+                    continue
+                cls_id = parts[0]
+                cx, cy, w, h = map(float, parts[1:5])
+                ncx, ncy, nw, nh = rotate_yolo_label(cx, cy, w, h, angle)
+                f.write(f"{cls_id} {ncx:.6f} {ncy:.6f} {nw:.6f} {nh:.6f}\n")
+        total += 1
 
     return total
 
@@ -521,7 +523,7 @@ else:
         :optimal_size
     ]
 
-EXPECTED_AUG_COUNT = len(optimal_img_paths) * 4
+EXPECTED_AUG_COUNT = len(optimal_img_paths) * 2  # 1 original + 1 random rotation
 existing_count = len(list(AUG_IMG_DIR.glob("*.webp"))) if AUG_IMG_DIR.exists() else 0
 
 if existing_count == EXPECTED_AUG_COUNT:
