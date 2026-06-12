@@ -653,11 +653,44 @@ with open(legacy_yaml_path, "w", encoding="utf-8") as f:
         allow_unicode=True,
     )
 
+print("\n📊 Baseline 모델 → Legacy Test Set 평가")
+baseline_weight = PROJECT_ROOT / "runs/detect/train_baseline/weights/best.pt"
+legacy_baseline_metrics = None
+if baseline_weight.exists():
+    model_base_eval = YOLO(str(baseline_weight))
+    legacy_baseline_metrics = model_base_eval.val(data=str(legacy_yaml_path))
+else:
+    print("⚠️ Baseline 가중치 없음 — Legacy 비교 스킵")
+
 print("\n📊 Augmented 모델 → Legacy Test Set 평가")
 aug_weight = PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
+legacy_aug_metrics = None
 if aug_weight.exists():
     model_aug_eval = YOLO(str(aug_weight))
     legacy_aug_metrics = model_aug_eval.val(data=str(legacy_yaml_path))
+
+# ── Baseline vs Augmented on Legacy Test Set comparison ──
+if legacy_baseline_metrics is not None and legacy_aug_metrics is not None:
+    base_map50 = legacy_baseline_metrics.results_dict.get("metrics/mAP50(B)", 0)
+    aug_map50 = legacy_aug_metrics.results_dict.get("metrics/mAP50(B)", 0)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    models = ["Baseline\n(Default Aug)", "Augmented\n(Domain Aug + Rotation)"]
+    scores = [base_map50, aug_map50]
+    colors = ["#FF6B6B", "#4ECDC4"]
+    bars = ax.bar(models, scores, color=colors, width=0.5, edgecolor="white", linewidth=2)
+    for bar, score in zip(bars, scores):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
+                f"{score:.3f}", ha="center", va="bottom", fontsize=14, fontweight="bold")
+    ax.set_ylabel("mAP@50", fontsize=13)
+    ax.set_title("Legacy Test Set: Baseline vs Augmented", fontsize=15, fontweight="bold")
+    ax.set_ylim(0, max(scores) * 1.2 if max(scores) > 0 else 1.0)
+    ax.grid(axis="y", linestyle=":", alpha=0.5)
+    plt.tight_layout()
+    legacy_comp_path = PROJECT_ROOT / "runs" / "legacy_baseline_vs_augmented.png"
+    plt.savefig(legacy_comp_path, dpi=200, bbox_inches="tight")
+    plt.show()
+    print(f"✅ Legacy 비교 저장: {legacy_comp_path}")
 
 # %% [markdown]
 # ## 7. [Phase 3] OCR 전이학습 (Transfer Learning)
