@@ -323,6 +323,7 @@ print("=" * 60)
 import pandas as pd
 
 train_images = list((MASTER_DATASET_DIR / "images" / "train").glob("*.webp"))
+random.shuffle(train_images)  # Prevent systematic bias from filesystem ordering
 # 총 1600장의 훈련셋을 활용하여 점진적 크기 실험
 data_sizes = [300, 600, 900, 1200, 1500]
 scaling_results = {}
