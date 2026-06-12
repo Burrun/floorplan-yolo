@@ -418,6 +418,125 @@ if scaling_results:
 
 
 # %% [markdown]
+# ## 4.5 [Augmentation] 90°/180°/270° Offline Rotation Augmentation
+# - 도면은 스캐너 방향에 따라 0°/90°/180°/270° 네 방향이 모두 자연스럽습니다.
+# - 원본 train 1600장 × 4방향 = 6400장으로 학습 데이터를 확장합니다.
+# - YOLO 라벨(cx, cy, w, h)도 수학적으로 동기 변환합니다.
+
+# %%
+print("=" * 60)
+print("🔄 [Augmentation] 90°/180°/270° Offline Rotation")
+print("=" * 60)
+
+AUG_IMG_DIR = MASTER_DATASET_DIR / "images" / "train_aug"
+AUG_LBL_DIR = MASTER_DATASET_DIR / "labels" / "train_aug"
+
+
+def rotate_yolo_label(cx, cy, w, h, angle):
+    """Rotate YOLO normalized coords by 90/180/270 degrees (counterclockwise)."""
+    if angle == 90:
+        return cy, 1.0 - cx, h, w
+    elif angle == 180:
+        return 1.0 - cx, 1.0 - cy, w, h
+    elif angle == 270:
+        return 1.0 - cy, cx, h, w
+    else:
+        return cx, cy, w, h
+
+
+def augment_with_rotations(src_img_dir, src_lbl_dir, dst_img_dir, dst_lbl_dir):
+    """Copy originals + generate 90/180/270° rotated images and labels."""
+    dst_img_dir.mkdir(parents=True, exist_ok=True)
+    dst_lbl_dir.mkdir(parents=True, exist_ok=True)
+
+    img_files = sorted(src_img_dir.glob("*.webp"))
+    angles = [90, 180, 270]
+    # OpenCV rotation codes
+    rot_codes = {
+        90: cv2.ROTATE_90_COUNTERCLOCKWISE,
+        180: cv2.ROTATE_180,
+        270: cv2.ROTATE_90_CLOCKWISE,
+    }
+
+    total = 0
+    for img_path in img_files:
+        stem = img_path.stem
+        lbl_path = src_lbl_dir / (stem + ".txt")
+
+        # 1) Copy original
+        shutil.copy2(str(img_path), str(dst_img_dir / img_path.name))
+        if lbl_path.exists():
+            shutil.copy2(str(lbl_path), str(dst_lbl_dir / lbl_path.name))
+        total += 1
+
+        # 2) Generate rotated versions
+        img = cv2.imread(str(img_path))
+        if img is None:
+            continue
+
+        # Read label lines once
+        label_lines = []
+        if lbl_path.exists():
+            with open(lbl_path, "r") as f:
+                label_lines = f.readlines()
+
+        for angle in angles:
+            # Rotate image
+            rotated = cv2.rotate(img, rot_codes[angle])
+            rot_name = f"{stem}_rot{angle}.webp"
+            cv2.imwrite(str(dst_img_dir / rot_name), rotated)
+
+            # Rotate labels
+            rot_lbl_name = f"{stem}_rot{angle}.txt"
+            with open(dst_lbl_dir / rot_lbl_name, "w") as f:
+                for line in label_lines:
+                    parts = line.strip().split()
+                    if len(parts) < 5:
+                        continue
+                    cls_id = parts[0]
+                    cx, cy, w, h = map(float, parts[1:5])
+                    ncx, ncy, nw, nh = rotate_yolo_label(cx, cy, w, h, angle)
+                    f.write(f"{cls_id} {ncx:.6f} {ncy:.6f} {nw:.6f} {nh:.6f}\n")
+            total += 1
+
+    return total
+
+
+# Skip if already generated
+existing_count = len(list(AUG_IMG_DIR.glob("*.webp"))) if AUG_IMG_DIR.exists() else 0
+EXPECTED_AUG_COUNT = 6400  # 1600 originals × 4 orientations
+
+if existing_count >= EXPECTED_AUG_COUNT:
+    print(f"✅ Augmented train set already exists ({existing_count} images). Skipping.")
+else:
+    print("⏳ Generating rotated augmentation data...")
+    count = augment_with_rotations(
+        MASTER_DATASET_DIR / "images" / "train",
+        MASTER_DATASET_DIR / "labels" / "train",
+        AUG_IMG_DIR,
+        AUG_LBL_DIR,
+    )
+    print(f"✅ Rotation augmentation complete: {count} images in train_aug/")
+
+# Generate augmented dataset.yaml
+aug_yaml_path = MASTER_DATASET_DIR / "dataset_augmented.yaml"
+with open(aug_yaml_path, "w", encoding="utf-8") as f:
+    yaml.dump(
+        {
+            "path": str(MASTER_DATASET_DIR.resolve()),
+            "train": "images/train_aug",
+            "val": "images/val",
+            "test": "images/test",
+            "names": class_names,
+        },
+        f,
+        allow_unicode=True,
+        default_flow_style=False,
+    )
+print(f"📄 dataset_augmented.yaml saved at {aug_yaml_path}")
+
+
+# %% [markdown]
 # ## 5. [Phase 2] 도메인 맞춤형 증강 탐색 (Baseline vs Augmented)
 # - 최적의 데이터 개수(최대치 1200장)를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
 
@@ -459,7 +578,7 @@ if aug_weight.exists():
 else:
     model_augmented = YOLO(BASE_WEIGHT)
     results_augmented = model_augmented.train(
-        data=str(MASTER_DATASET_DIR / "dataset.yaml"),
+        data=str(MASTER_DATASET_DIR / "dataset_augmented.yaml"),
         epochs=150,  # 7클래스 난이도 상승 반영
         imgsz=640,
         batch=BATCH_SIZE,
@@ -471,8 +590,8 @@ else:
         # 도메인 갭(Domain Gap) 극복을 위한 파라미터 (레거시 도면 타겟팅)
         # 확률 및 변형 강도를 나타내는 데이터 증강(Augmentation) 파라미터
         degrees=2.0,  # 이미지 회전 (+/- 2.0도): 스캐너 수작업 스캔 오차 모사
-        hsv_s=0.2,  # 채도 변형 비율 (20%): 오래된 도면의 색 빠짐 모사
-        hsv_v=0.2,  # 명도 변형 비율 (20%): 도면의 황변 현상 및 퇴색 모사
+        hsv_s=0.2,  # 채도 변형 (20%) — YOLO 기본 0.7 대비 의도적 약화: 도면은 흑백/저채도 기반이므로 과도한 색상 변형은 비현실적
+        hsv_v=0.2,  # 명도 변형 (20%) — YOLO 기본 0.4 대비 의도적 약화: 도면 특성상 명도 분포가 좁아 과도한 변형은 노이즈 유발
         perspective=0.0005,  # 원근 왜곡 강도 (0.05%): 스캔 시 종이가 울거나 삐뚤어진 상태 모사
         scale=0.5,  # 스케일 변형 (+/- 50%): 다양한 해상도 및 도면 배율(확대/축소) 대응
         mosaic=1.0,  # 모자이크 증강 확률 (100%): 4장의 도면을 하나로 합쳐 모델의 강건성 극대화
