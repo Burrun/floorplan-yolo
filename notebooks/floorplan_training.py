@@ -678,12 +678,23 @@ if legacy_baseline_metrics is not None and legacy_aug_metrics is not None:
     models = ["Baseline\n(Default Aug)", "Augmented\n(Domain Aug + Rotation)"]
     scores = [base_map50, aug_map50]
     colors = ["#FF6B6B", "#4ECDC4"]
-    bars = ax.bar(models, scores, color=colors, width=0.5, edgecolor="white", linewidth=2)
+    bars = ax.bar(
+        models, scores, color=colors, width=0.5, edgecolor="white", linewidth=2
+    )
     for bar, score in zip(bars, scores):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.01,
-                f"{score:.3f}", ha="center", va="bottom", fontsize=14, fontweight="bold")
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,
+            bar.get_height() + 0.01,
+            f"{score:.3f}",
+            ha="center",
+            va="bottom",
+            fontsize=14,
+            fontweight="bold",
+        )
     ax.set_ylabel("mAP@50", fontsize=13)
-    ax.set_title("Legacy Test Set: Baseline vs Augmented", fontsize=15, fontweight="bold")
+    ax.set_title(
+        "Legacy Test Set: Baseline vs Augmented", fontsize=15, fontweight="bold"
+    )
     ax.set_ylim(0, max(scores) * 1.2 if max(scores) > 0 else 1.0)
     ax.grid(axis="y", linestyle=":", alpha=0.5)
     plt.tight_layout()
@@ -953,7 +964,8 @@ else:
         print(f"✅ 학습 수렴(Loss, mAP) 비교 그래프 저장 완료: {comp_save_path}")
 
         # ── Convergence Speed Comparison ──
-        MAP_THRESHOLD = 0.9
+        MAP_THRESHOLD = 0.80
+
         def find_convergence_epoch(df, col, threshold):
             """Find first epoch where metric >= threshold."""
             above = df[df[col] >= threshold]

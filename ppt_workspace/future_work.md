@@ -38,6 +38,13 @@
 - ~~Phase 4 (Master 통합 모델)~~: BBox→Polygon 변환의 구조적 문제, 클래스 불균형, 15에폭으로 20+클래스 학습의 비현실성 → **삭제. Future Work로 이동.**
 
 ## 4. Future Work
+- **[단기 과제] 3D 렌더링용 JSON 후처리 파이프라인 (Phase 5) 알고리즘 구현**
+  - **1단계 (Confidence 추출):** `results[0].boxes.conf`를 활용하여 바운딩 박스의 객체 좌표(x, y, w, h)뿐만 아니라 YOLO 모델이 내뱉는 고유의 확신도(Confidence Score) 배열을 명시적으로 추출.
+  - **2단계 (IoA 및 중재 로직 고도화):** 
+    - **IoA (Intersection over Area):** 일반적인 IoU가 아닌 '작은 박스 넓이' 대비 '겹치는 넓이'를 계산. (예: `겹치는 넓이 / 텍스트 박스 넓이 > 0.8` 이면 텍스트가 가구 내부에 속한 것으로 간주하여 부모-자식 계층으로 JSON 구조화)
+    - **Confidence-Aware Arbitration:** Master 모델과 OCR 모델이 동일한 위치에 대해 서로 다른 예측을 내놓았을 때, 추출해둔 `box.conf` 값을 비교하여 확신도가 더 높은 예측값을 채택하고 나머지는 필터링(제거)하는 중재 로직 적용.
+  - **3단계 (Topological 스냅):** 객체(가구/문)의 각도를 0, 90, 180, 270도로 직교화(Orthogonalize)하고 가까운 가상 벽체 좌표로 밀착(Snap) 처리.
+  - **4단계 (JSON Export):** 추출된 데이터를 `structures`, `furnitures`, `rooms_ocr` 계층으로 분리하여 3D 엔진(Unity/WebGL) 호환 JSON 구조로 자동 저장(`json.dump`).
 - End-to-End Vectorization (RoomFormer, FloorplanVLM 등)
 - GNN 기반 Topological Consistency 모델
 - Pix2Pix/Diffusion 기반 도면 복원 전처리
