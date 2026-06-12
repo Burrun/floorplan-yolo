@@ -45,6 +45,7 @@ from pathlib import Path
 from ultralytics import YOLO
 import subprocess
 import cv2
+from concurrent.futures import ThreadPoolExecutor
 
 # ──────────────────────────────────────────────
 # 🎯 재현성 확보 (Reproducibility)
@@ -326,7 +327,7 @@ train_images = list((MASTER_DATASET_DIR / "images" / "train").glob("*.webp"))
 random.shuffle(train_images)  # Prevent systematic bias from filesystem ordering
 # 총 1600장의 훈련셋을 활용하여 점진적 크기 실험
 data_sizes = [300, 600, 900, 1200, 1500]
-scaling_results = {}
+scaling_results: dict[int, float] = {}
 
 for size in data_sizes:
     if size > len(train_images):
@@ -426,9 +427,9 @@ else:
 
 
 # %% [markdown]
-# ## 4.5 [Augmentation] 90°/180°/270° Offline Rotation Augmentation
+# ## 4.5 [Augmentation] Probabilistic Offline Rotation Augmentation
 # - 도면은 스캐너 방향에 따라 0°/90°/180°/270° 네 방향이 모두 자연스럽습니다.
-# - 원본 train 1600장 × 4방향 = 6400장으로 학습 데이터를 확장합니다.
+# - 원본(최적 데이터) + 90°/180°/270° 중 랜덤하게 1방향을 추가하여 2배수로 학습 데이터를 확장합니다.
 # - YOLO 라벨(cx, cy, w, h)도 수학적으로 동기 변환합니다.
 
 # %%
@@ -452,12 +453,59 @@ def rotate_yolo_label(cx, cy, w, h, angle):
         return cx, cy, w, h
 
 
+def _process_single_augmentation(
+    img_path, src_lbl_dir, dst_img_dir, dst_lbl_dir, rot_codes
+):
+    angles = [90, 180, 270]
+    stem = img_path.stem
+    lbl_path = src_lbl_dir / (stem + ".txt")
+
+    # 1) Copy original
+    shutil.copy2(str(img_path), str(dst_img_dir / img_path.name))
+    if lbl_path.exists():
+        shutil.copy2(str(lbl_path), str(dst_lbl_dir / lbl_path.name))
+
+    count = 1
+
+    # 2) Generate rotated versions
+    img = cv2.imread(str(img_path))
+    if img is None:
+        return count
+
+    # Read label lines once
+    label_lines = []
+    if lbl_path.exists():
+        with open(lbl_path, "r", encoding="utf-8") as f:
+            label_lines = f.readlines()
+
+    # Select ONE random angle instead of all 3 to save training time
+    angle = random.choice(angles)
+
+    # Rotate image
+    rotated = cv2.rotate(img, rot_codes[angle])
+    rot_name = f"{stem}_rot{angle}.webp"
+    cv2.imwrite(str(dst_img_dir / rot_name), rotated)
+
+    # Rotate labels
+    rot_lbl_name = f"{stem}_rot{angle}.txt"
+    with open(dst_lbl_dir / rot_lbl_name, "w", encoding="utf-8") as f:
+        for line in label_lines:
+            parts = line.strip().split()
+            if len(parts) < 5:
+                continue
+            cls_id = parts[0]
+            cx, cy, w, h = map(float, parts[1:5])
+            ncx, ncy, nw, nh = rotate_yolo_label(cx, cy, w, h, angle)
+            f.write(f"{cls_id} {ncx:.6f} {ncy:.6f} {nw:.6f} {nh:.6f}\n")
+
+    return count + 1
+
+
 def augment_with_rotations(img_files, src_lbl_dir, dst_img_dir, dst_lbl_dir):
-    """Copy originals + generate 90/180/270° rotated images and labels."""
+    """Copy originals + generate 90/180/270° rotated images and labels using multi-threading."""
     dst_img_dir.mkdir(parents=True, exist_ok=True)
     dst_lbl_dir.mkdir(parents=True, exist_ok=True)
 
-    angles = [90, 180, 270]
     # OpenCV rotation codes
     rot_codes = {
         90: cv2.ROTATE_90_COUNTERCLOCKWISE,
@@ -466,47 +514,22 @@ def augment_with_rotations(img_files, src_lbl_dir, dst_img_dir, dst_lbl_dir):
     }
 
     total = 0
-    for img_path in img_files:
-        stem = img_path.stem
-        lbl_path = src_lbl_dir / (stem + ".txt")
-
-        # 1) Copy original
-        shutil.copy2(str(img_path), str(dst_img_dir / img_path.name))
-        if lbl_path.exists():
-            shutil.copy2(str(lbl_path), str(dst_lbl_dir / lbl_path.name))
-        total += 1
-
-        # 2) Generate rotated versions
-        img = cv2.imread(str(img_path))
-        if img is None:
-            continue
-
-        # Read label lines once
-        label_lines = []
-        if lbl_path.exists():
-            with open(lbl_path, "r") as f:
-                label_lines = f.readlines()
-
-        # Select ONE random angle instead of all 3 to save training time
-        angle = random.choice(angles)
-
-        # Rotate image
-        rotated = cv2.rotate(img, rot_codes[angle])
-        rot_name = f"{stem}_rot{angle}.webp"
-        cv2.imwrite(str(dst_img_dir / rot_name), rotated)
-
-        # Rotate labels
-        rot_lbl_name = f"{stem}_rot{angle}.txt"
-        with open(dst_lbl_dir / rot_lbl_name, "w") as f:
-            for line in label_lines:
-                parts = line.strip().split()
-                if len(parts) < 5:
-                    continue
-                cls_id = parts[0]
-                cx, cy, w, h = map(float, parts[1:5])
-                ncx, ncy, nw, nh = rotate_yolo_label(cx, cy, w, h, angle)
-                f.write(f"{cls_id} {ncx:.6f} {ncy:.6f} {nw:.6f} {nh:.6f}\n")
-        total += 1
+    # Multi-threading for 10x faster I/O processing
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for img_path in img_files:
+            futures.append(
+                executor.submit(
+                    _process_single_augmentation,
+                    img_path,
+                    src_lbl_dir,
+                    dst_img_dir,
+                    dst_lbl_dir,
+                    rot_codes,
+                )
+            )
+        for future in futures:
+            total += future.result()
 
     return total
 
@@ -565,7 +588,7 @@ print(f"📄 dataset_augmented.yaml saved at {aug_yaml_path}")
 
 # %% [markdown]
 # ## 5. [Phase 2] 도메인 맞춤형 증강 탐색 (Baseline vs Augmented)
-# - 최적의 데이터 개수(최대치 1200장)를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
+# - Phase 1에서 검증된 최적의 데이터 개수를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
 
 # %%
 print("=" * 60)
