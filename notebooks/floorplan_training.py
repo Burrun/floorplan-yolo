@@ -1156,19 +1156,6 @@ from sahi import AutoDetectionModel
 from sahi.predict import get_sliced_prediction
 import matplotlib.patches as mpatches
 
-# ──────────────────────────────────────────────
-# 🎨 전역 색상 팔레트 (8클래스: 7 마스터 + 1 OCR)
-# ──────────────────────────────────────────────
-CLASS_COLOR_MAP = {
-    "toilet": (255, 80, 80),  # 빨강
-    "washbasin": (80, 180, 255),  # 하늘
-    "sink": (80, 220, 120),  # 초록
-    "bathtub": (255, 180, 50),  # 주황
-    "gas_stove": (180, 80, 255),  # 보라
-    "door": (255, 220, 50),  # 노랑
-    "window": (50, 220, 220),  # 시안(청록)
-    "text": (255, 120, 200),  # 핑크
-}
 
 # YOLO 학습 순서 ID → 클래스 이름
 MASTER_ID_TO_NAME = {
