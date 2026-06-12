@@ -17,3 +17,7 @@ venv/
 .ipynb_checkpoints/
 .vscode/
 jupytext.toml
+
+# YOLO Outputs and Weights
+runs/
+*.pt
