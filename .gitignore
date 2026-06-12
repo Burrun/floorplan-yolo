@@ -18,10 +18,6 @@ venv/
 .vscode/
 jupytext.toml
 
-# YOLO Outputs and Weights
-runs/
-*.pt
-
 # Generated Datasets and Archives
 master_dataset/
 *.zst
