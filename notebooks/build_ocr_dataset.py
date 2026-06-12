@@ -12,7 +12,7 @@ def main():
     BASE_DIR = Path(r"C:\Users\jack3\Desktop\pj")
     MASTER_DIR = BASE_DIR / "master_dataset"
     OCR_ZIP_PATH = Path(r"C:\Users\jack3\Downloads\239.건축 도면 데이터\01-1.정식개방데이터\Training\02.라벨링데이터\TL_OCR.zip")
-    OCR_DIR = BASE_DIR / "data" / "ocr_dataset"
+    OCR_DIR = BASE_DIR / "ocr_dataset"
     
     if not OCR_ZIP_PATH.exists():
         print(f"❌ OCR 원본 ZIP 파일을 찾을 수 없습니다: {OCR_ZIP_PATH}")
