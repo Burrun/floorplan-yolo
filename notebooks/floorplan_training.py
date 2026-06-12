@@ -416,6 +416,14 @@ if scaling_results:
         )
     plt.show()
 
+if scaling_results:
+    optimal_size = max(scaling_results, key=scaling_results.get)
+    print(
+        f"✅ 최적의 데이터 개수 결정: {optimal_size}장 (mAP: {scaling_results[optimal_size]:.3f})"
+    )
+else:
+    optimal_size = 1500
+
 
 # %% [markdown]
 # ## 4.5 [Augmentation] 90°/180°/270° Offline Rotation Augmentation
@@ -444,12 +452,11 @@ def rotate_yolo_label(cx, cy, w, h, angle):
         return cx, cy, w, h
 
 
-def augment_with_rotations(src_img_dir, src_lbl_dir, dst_img_dir, dst_lbl_dir):
+def augment_with_rotations(img_files, src_lbl_dir, dst_img_dir, dst_lbl_dir):
     """Copy originals + generate 90/180/270° rotated images and labels."""
     dst_img_dir.mkdir(parents=True, exist_ok=True)
     dst_lbl_dir.mkdir(parents=True, exist_ok=True)
 
-    img_files = sorted(src_img_dir.glob("*.webp"))
     angles = [90, 180, 270]
     # OpenCV rotation codes
     rot_codes = {
@@ -502,16 +509,34 @@ def augment_with_rotations(src_img_dir, src_lbl_dir, dst_img_dir, dst_lbl_dir):
     return total
 
 
-# Skip if already generated
-existing_count = len(list(AUG_IMG_DIR.glob("*.webp"))) if AUG_IMG_DIR.exists() else 0
-EXPECTED_AUG_COUNT = 6400  # 1600 originals × 4 orientations
+# 최적 데이터셋 경로 읽기
+optimal_txt_path = MASTER_DATASET_DIR / f"train_{optimal_size}.txt"
+if optimal_txt_path.exists():
+    with open(optimal_txt_path, "r", encoding="utf-8") as f:
+        optimal_img_paths = [
+            Path(line.strip()) for line in f.readlines() if line.strip()
+        ]
+else:
+    optimal_img_paths = list((MASTER_DATASET_DIR / "images" / "train").glob("*.webp"))[
+        :optimal_size
+    ]
 
-if existing_count >= EXPECTED_AUG_COUNT:
+EXPECTED_AUG_COUNT = len(optimal_img_paths) * 4
+existing_count = len(list(AUG_IMG_DIR.glob("*.webp"))) if AUG_IMG_DIR.exists() else 0
+
+if existing_count == EXPECTED_AUG_COUNT:
     print(f"✅ Augmented train set already exists ({existing_count} images). Skipping.")
 else:
-    print("⏳ Generating rotated augmentation data...")
+    print(
+        f"⏳ Generating rotated augmentation data for optimal {len(optimal_img_paths)} images..."
+    )
+    if AUG_IMG_DIR.exists():
+        shutil.rmtree(AUG_IMG_DIR)
+        if AUG_LBL_DIR.exists():
+            shutil.rmtree(AUG_LBL_DIR)
+
     count = augment_with_rotations(
-        MASTER_DATASET_DIR / "images" / "train",
+        optimal_img_paths,
         MASTER_DATASET_DIR / "labels" / "train",
         AUG_IMG_DIR,
         AUG_LBL_DIR,
@@ -555,7 +580,7 @@ if baseline_weight.exists():
 else:
     model_baseline = YOLO(BASE_WEIGHT)
     results_baseline = model_baseline.train(
-        data=str(MASTER_DATASET_DIR / "dataset.yaml"),
+        data=str(MASTER_DATASET_DIR / f"dataset_{optimal_size}.yaml"),
         epochs=150,  # 7클래스 난이도 상승 반영
         imgsz=640,
         batch=BATCH_SIZE,
