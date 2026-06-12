@@ -952,6 +952,29 @@ else:
         plt.show()
         print(f"✅ 학습 수렴(Loss, mAP) 비교 그래프 저장 완료: {comp_save_path}")
 
+        # ── Convergence Speed Comparison ──
+        MAP_THRESHOLD = 0.9
+        def find_convergence_epoch(df, col, threshold):
+            """Find first epoch where metric >= threshold."""
+            above = df[df[col] >= threshold]
+            return int(above["epoch"].iloc[0]) if len(above) > 0 else None
+
+        if col_map in df_scratch.columns and col_map in df_transfer.columns:
+            scratch_conv = find_convergence_epoch(df_scratch, col_map, MAP_THRESHOLD)
+            transfer_conv = find_convergence_epoch(df_transfer, col_map, MAP_THRESHOLD)
+            print(f"\n⚡ Convergence Speed (mAP≥{MAP_THRESHOLD}):")
+            if transfer_conv is not None:
+                print(f"   Transfer: {transfer_conv} epochs")
+            else:
+                print(f"   Transfer: did not reach {MAP_THRESHOLD}")
+            if scratch_conv is not None:
+                print(f"   Scratch:  {scratch_conv} epochs")
+            else:
+                print(f"   Scratch:  did not reach {MAP_THRESHOLD}")
+            if transfer_conv and scratch_conv:
+                speedup = scratch_conv / transfer_conv
+                print(f"   → Transfer is {speedup:.1f}x faster convergence")
+
     # 1-2. 혼동 행렬(Confusion Matrix) 이미지 기반 비교
     scratch_cm = (
         PROJECT_ROOT / "runs/detect/train_ocr_scratch/confusion_matrix_normalized.png"
@@ -1093,7 +1116,7 @@ else:
 
         axes[0].imshow(img_s_rgb)
         axes[0].set_title(
-            "Scratch / 8-Class baseline Model\n(Misses, False Positives, Feature Collision)",
+            "Scratch (Random Init) Model\n(Slower Convergence, Lower Accuracy)",
             fontsize=16,
             color="#FF6B6B",
             fontweight="bold",
