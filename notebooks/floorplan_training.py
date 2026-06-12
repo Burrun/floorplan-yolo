@@ -326,7 +326,7 @@ train_images = list((MASTER_DATASET_DIR / "images" / "train").glob("*.webp"))
 random.shuffle(train_images)  # Prevent systematic bias from filesystem ordering
 # 총 1600장의 훈련셋을 활용하여 점진적 크기 실험
 data_sizes = [300, 600, 900, 1200, 1500]
-scaling_results = {}
+scaling_results: dict[int, float] = {}
 
 for size in data_sizes:
     if size > len(train_images):
@@ -565,7 +565,7 @@ print(f"📄 dataset_augmented.yaml saved at {aug_yaml_path}")
 
 # %% [markdown]
 # ## 5. [Phase 2] 도메인 맞춤형 증강 탐색 (Baseline vs Augmented)
-# - 최적의 데이터 개수(최대치 1200장)를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
+# - Phase 1에서 검증된 최적의 데이터 개수를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
 
 # %%
 print("=" * 60)
