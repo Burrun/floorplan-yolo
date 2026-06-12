@@ -21,3 +21,10 @@ jupytext.toml
 # YOLO Outputs and Weights
 runs/
 *.pt
+
+# Generated Datasets and Archives
+master_dataset/
+*.zst
+dataset_*.yaml
+dataset.yaml
+train_*.txt
