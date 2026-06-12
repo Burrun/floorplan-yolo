@@ -426,9 +426,9 @@ else:
 
 
 # %% [markdown]
-# ## 4.5 [Augmentation] 90°/180°/270° Offline Rotation Augmentation
+# ## 4.5 [Augmentation] Probabilistic Offline Rotation Augmentation
 # - 도면은 스캐너 방향에 따라 0°/90°/180°/270° 네 방향이 모두 자연스럽습니다.
-# - 원본 train 1600장 × 4방향 = 6400장으로 학습 데이터를 확장합니다.
+# - 원본(최적 데이터) + 90°/180°/270° 중 랜덤하게 1방향을 추가하여 2배수로 학습 데이터를 확장합니다.
 # - YOLO 라벨(cx, cy, w, h)도 수학적으로 동기 변환합니다.
 
 # %%
