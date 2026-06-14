@@ -45,6 +45,7 @@ from pathlib import Path
 from ultralytics import YOLO
 import subprocess
 import cv2
+from concurrent.futures import ThreadPoolExecutor
 
 # ──────────────────────────────────────────────
 # 🎯 재현성 확보 (Reproducibility)
@@ -124,7 +125,7 @@ else:
     )
 
 # %% [markdown]
-# ## 1. 7클래스 마스터 데이터셋 연동 및 압축 해제
+# ## 0-2. 7클래스 마스터 데이터셋 연동 및 압축 해제
 
 # %%
 # ──────────────────────────────────────────────
@@ -187,7 +188,7 @@ else:
     print(f"Dataset ready at {MASTER_DATASET_DIR}")
 
 # %% [markdown]
-# ## 2. YOLO dataset.yaml 자동 생성 (7클래스)
+# ## 0-3. YOLO dataset.yaml 자동 생성 (7클래스)
 
 # %%
 yaml_path = MASTER_DATASET_DIR / "dataset.yaml"
@@ -215,7 +216,7 @@ with open(yaml_path, "w", encoding="utf-8") as f:
 print(f"dataset.yaml saved at {yaml_path}")
 
 # %% [markdown]
-# ## 3. 탐색적 데이터 분석 (EDA) 및 시각화 검증
+# ## 0-4. 탐색적 데이터 분석 (EDA) 및 시각화 검증
 
 # %%
 # ──────────────────────────────────────────────
@@ -244,7 +245,7 @@ def visualize_yolo_labels(image_path, label_path, class_names):
     h, w = img.shape[:2]
 
     if not os.path.exists(label_path):
-        return img
+        return img, {}
 
     counts = {}
     with open(label_path, "r") as f:
@@ -275,7 +276,7 @@ train_lbl_dir = MASTER_DATASET_DIR / "labels" / "train"
 if train_img_dir.exists():
     img_files = list(train_img_dir.glob("*.webp"))
     if img_files:
-        # EDA 재현성을 위해 샘플 고정
+        # 시드(SEED=42) 고정으로 EDA 재현성 확보
         sample_img = random.choice(img_files)
         sample_lbl = train_lbl_dir / (sample_img.stem + ".txt")
 
@@ -312,7 +313,7 @@ if train_img_dir.exists():
             plt.show()
 
 # %% [markdown]
-# ## 4. [Phase 1] 최적의 데이터 개수 탐색 (Data Scaling Ablation)
+# ## 1. [Phase 1] 최적의 데이터 개수 탐색 (Data Scaling Ablation)
 # - 학습 데이터 개수를 300장부터 1500장까지 점진적으로 늘려보며 성능 향상폭이 꺾이는 지점(Saturation Point)을 찾습니다.
 
 # %%
@@ -326,7 +327,7 @@ train_images = list((MASTER_DATASET_DIR / "images" / "train").glob("*.webp"))
 random.shuffle(train_images)  # Prevent systematic bias from filesystem ordering
 # 총 1600장의 훈련셋을 활용하여 점진적 크기 실험
 data_sizes = [300, 600, 900, 1200, 1500]
-scaling_results = {}
+scaling_results: dict[int, float] = {}
 
 for size in data_sizes:
     if size > len(train_images):
@@ -416,133 +417,60 @@ if scaling_results:
         )
     plt.show()
 
-
-# %% [markdown]
-# ## 4.5 [Augmentation] 90°/180°/270° Offline Rotation Augmentation
-# - 도면은 스캐너 방향에 따라 0°/90°/180°/270° 네 방향이 모두 자연스럽습니다.
-# - 원본 train 1600장 × 4방향 = 6400장으로 학습 데이터를 확장합니다.
-# - YOLO 라벨(cx, cy, w, h)도 수학적으로 동기 변환합니다.
-
-# %%
-print("=" * 60)
-print("🔄 [Augmentation] 90°/180°/270° Offline Rotation")
-print("=" * 60)
-
-AUG_IMG_DIR = MASTER_DATASET_DIR / "images" / "train_aug"
-AUG_LBL_DIR = MASTER_DATASET_DIR / "labels" / "train_aug"
-
-
-def rotate_yolo_label(cx, cy, w, h, angle):
-    """Rotate YOLO normalized coords by 90/180/270 degrees (counterclockwise)."""
-    if angle == 90:
-        return cy, 1.0 - cx, h, w
-    elif angle == 180:
-        return 1.0 - cx, 1.0 - cy, w, h
-    elif angle == 270:
-        return 1.0 - cy, cx, h, w
-    else:
-        return cx, cy, w, h
-
-
-def augment_with_rotations(src_img_dir, src_lbl_dir, dst_img_dir, dst_lbl_dir):
-    """Copy originals + generate 90/180/270° rotated images and labels."""
-    dst_img_dir.mkdir(parents=True, exist_ok=True)
-    dst_lbl_dir.mkdir(parents=True, exist_ok=True)
-
-    img_files = sorted(src_img_dir.glob("*.webp"))
-    angles = [90, 180, 270]
-    # OpenCV rotation codes
-    rot_codes = {
-        90: cv2.ROTATE_90_COUNTERCLOCKWISE,
-        180: cv2.ROTATE_180,
-        270: cv2.ROTATE_90_CLOCKWISE,
-    }
-
-    total = 0
-    for img_path in img_files:
-        stem = img_path.stem
-        lbl_path = src_lbl_dir / (stem + ".txt")
-
-        # 1) Copy original
-        shutil.copy2(str(img_path), str(dst_img_dir / img_path.name))
-        if lbl_path.exists():
-            shutil.copy2(str(lbl_path), str(dst_lbl_dir / lbl_path.name))
-        total += 1
-
-        # 2) Generate rotated versions
-        img = cv2.imread(str(img_path))
-        if img is None:
-            continue
-
-        # Read label lines once
-        label_lines = []
-        if lbl_path.exists():
-            with open(lbl_path, "r") as f:
-                label_lines = f.readlines()
-
-        for angle in angles:
-            # Rotate image
-            rotated = cv2.rotate(img, rot_codes[angle])
-            rot_name = f"{stem}_rot{angle}.webp"
-            cv2.imwrite(str(dst_img_dir / rot_name), rotated)
-
-            # Rotate labels
-            rot_lbl_name = f"{stem}_rot{angle}.txt"
-            with open(dst_lbl_dir / rot_lbl_name, "w") as f:
-                for line in label_lines:
-                    parts = line.strip().split()
-                    if len(parts) < 5:
-                        continue
-                    cls_id = parts[0]
-                    cx, cy, w, h = map(float, parts[1:5])
-                    ncx, ncy, nw, nh = rotate_yolo_label(cx, cy, w, h, angle)
-                    f.write(f"{cls_id} {ncx:.6f} {ncy:.6f} {nw:.6f} {nh:.6f}\n")
-            total += 1
-
-    return total
-
-
-# Skip if already generated
-existing_count = len(list(AUG_IMG_DIR.glob("*.webp"))) if AUG_IMG_DIR.exists() else 0
-EXPECTED_AUG_COUNT = 6400  # 1600 originals × 4 orientations
-
-if existing_count >= EXPECTED_AUG_COUNT:
-    print(f"✅ Augmented train set already exists ({existing_count} images). Skipping.")
+if scaling_results:
+    optimal_size = max(scaling_results, key=scaling_results.get)
+    print(
+        f"✅ 최적의 데이터 개수 결정: {optimal_size}장 (mAP: {scaling_results[optimal_size]:.3f})"
+    )
 else:
-    print("⏳ Generating rotated augmentation data...")
-    count = augment_with_rotations(
-        MASTER_DATASET_DIR / "images" / "train",
-        MASTER_DATASET_DIR / "labels" / "train",
-        AUG_IMG_DIR,
-        AUG_LBL_DIR,
-    )
-    print(f"✅ Rotation augmentation complete: {count} images in train_aug/")
-
-# Generate augmented dataset.yaml
-aug_yaml_path = MASTER_DATASET_DIR / "dataset_augmented.yaml"
-with open(aug_yaml_path, "w", encoding="utf-8") as f:
-    yaml.dump(
-        {
-            "path": str(MASTER_DATASET_DIR.resolve()),
-            "train": "images/train_aug",
-            "val": "images/val",
-            "test": "images/test",
-            "names": class_names,
-        },
-        f,
-        allow_unicode=True,
-        default_flow_style=False,
-    )
-print(f"📄 dataset_augmented.yaml saved at {aug_yaml_path}")
+    optimal_size = 1500
 
 
 # %% [markdown]
-# ## 5. [Phase 2] 도메인 맞춤형 증강 탐색 (Baseline vs Augmented)
-# - 최적의 데이터 개수(최대치 1200장)를 고정하고, 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
+# ## 2. [Phase 2] 레거시 도면 노이즈 제거 전처리 (Pre-processing)
+# - Adaptive Gaussian Thresholding을 활용하여 레거시 스캔본의 망점과 음영을 완벽히 제거합니다.
+# - 실전 추론(Inference) 단계에서 외부 입력 이미지(Legacy)가 들어올 때 즉시 적용됩니다.
+
+# %%
+import cv2
+import numpy as np
+
+def apply_adaptive_gaussian_preprocessing(image_path_or_img) -> np.ndarray:
+    """
+    레거시 도면 이미지의 망점, 변색, 균일하지 않은 조명을 제거하는 전처리 모듈입니다.
+    입력: 이미지 파일 경로(str/Path) 또는 OpenCV BGR 이미지 배열(np.ndarray)
+    출력: 노이즈가 제거된 3채널(BGR) Numpy 이미지 배열
+    """
+    if isinstance(image_path_or_img, (str, Path)):
+        img = cv2.imread(str(image_path_or_img))
+    else:
+        img = image_path_or_img.copy()
+        
+    if img is None:
+        raise ValueError("이미지를 로드할 수 없습니다.")
+
+    # 1. Grayscale 변환
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # 2. Adaptive Gaussian 이진화 (Block: 21, C: 10)
+    # 주변 픽셀(21x21)의 가우시안 가중 평균을 기준으로 이진화하여 배경의 우글우글한 망점을 완전히 날려버립니다.
+    processed = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 10
+    )
+    
+    # 3. YOLO 추론기(3채널 RGB/BGR)에 맞춰 채널 변환
+    processed_bgr = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
+    return processed_bgr
+
+print("✅ [Phase 2] Adaptive Gaussian 전처리 파이프라인 함수 로드 완료")
+
+# %% [markdown]
+# ## 3. [Phase 3] 도메인 맞춤형 하이퍼 파라미터 탐색 (Baseline vs Domain-Tuned)
+# - 원본 데이터의 한계를 돌파할 도메인 맞춤형 증강 기법을 비교합니다.
 
 # %%
 print("=" * 60)
-print("🔬 [Phase 2] Baseline vs Augmented 모델 학습 (7클래스 마스터 모델)")
+print("🔬 [Phase 3] Baseline vs Domain-Tuned 모델 학습 (7클래스 마스터 모델)")
 print("=" * 60)
 
 # 1. Baseline (순정 학습)
@@ -555,7 +483,7 @@ if baseline_weight.exists():
 else:
     model_baseline = YOLO(BASE_WEIGHT)
     results_baseline = model_baseline.train(
-        data=str(MASTER_DATASET_DIR / "dataset.yaml"),
+        data=str(MASTER_DATASET_DIR / f"dataset_{optimal_size}.yaml"),
         epochs=150,  # 7클래스 난이도 상승 반영
         imgsz=640,
         batch=BATCH_SIZE,
@@ -568,24 +496,24 @@ else:
     torch.cuda.empty_cache()
     gc.collect()
 
-# 2. Augmented (도메인 맞춤형 증강 학습)
-print("\n🚀 Augmented 모델 학습 시작...")
-aug_weight = PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
+# 2. Domain-Tuned (도메인 맞춤형 하이퍼 파라미터 적용 학습)
+print("\n🚀 Domain-Tuned 모델 학습 시작...")
+aug_weight = PROJECT_ROOT / "runs/detect/train_domain_tuned/weights/best.pt"
 if aug_weight.exists():
     print(
-        f"✅ 이미 학습된 Augmented 모델 가중치가 존재합니다. 학습을 스킵합니다: {aug_weight}"
+        f"✅ 이미 학습된 Domain-Tuned 모델 가중치가 존재합니다. 학습을 스킵합니다: {aug_weight}"
     )
 else:
     model_augmented = YOLO(BASE_WEIGHT)
     results_augmented = model_augmented.train(
-        data=str(MASTER_DATASET_DIR / "dataset_augmented.yaml"),
+        data=str(MASTER_DATASET_DIR / f"dataset_{optimal_size}.yaml"),
         epochs=150,  # 7클래스 난이도 상승 반영
         imgsz=640,
         batch=BATCH_SIZE,
         workers=WORKERS,
         cache=True,
         project=str(PROJECT_ROOT / "runs/detect"),
-        name="train_augmented",
+        name="train_domain_tuned",
         patience=20,  # 성능 개선 없으면 20에폭 후 조기 종료
         # 도메인 갭(Domain Gap) 극복을 위한 파라미터 (레거시 도면 타겟팅)
         # 확률 및 변형 강도를 나타내는 데이터 증강(Augmentation) 파라미터
@@ -595,13 +523,15 @@ else:
         perspective=0.0005,  # 원근 왜곡 강도 (0.05%): 스캔 시 종이가 울거나 삐뚤어진 상태 모사
         scale=0.5,  # 스케일 변형 (+/- 50%): 다양한 해상도 및 도면 배율(확대/축소) 대응
         mosaic=1.0,  # 모자이크 증강 확률 (100%): 4장의 도면을 하나로 합쳐 모델의 강건성 극대화
+        gray=0.2,  # 흑백 변환 (20%): 누렇게 바랜 종이나 다채로운 스캔본을 흑백으로 처리하여 선 구조에만 집중하도록 유도
+        flipud=0.5,  # 상하 반전 (50%): 위아래가 뒤집혀 스캔된 도면에 대응하여 인식률 극대화
     )
     torch.cuda.empty_cache()
     gc.collect()
 
 # %% [markdown]
-# ## 6. [Phase 2-B] Simulated Legacy Test Set 기반 재평가
-# - 기존 val/test 셋은 깨끗한 도면이므로, 인위적 노이즈를 추가해 레거시 환경을 모사한 후 Augmented 모델의 실전 우위를 증명합니다.
+# ## 4. [Phase 3-B] Simulated Legacy 시각적 강건성 검증 (Visual Inspection)
+# - Baseline 모델과 Domain-Tuned 모델의 추론 결과를 시각적으로 비교하여, 도메인 맞춤 파라미터의 효과를 눈으로 직접 확인합니다.
 
 
 # %%
@@ -620,98 +550,73 @@ def simulate_legacy_degradation(img):
     return img
 
 
-legacy_test_img_dir = MASTER_DATASET_DIR / "images" / "legacy_test"
-legacy_test_lbl_dir = MASTER_DATASET_DIR / "labels" / "legacy_test"
-legacy_test_img_dir.mkdir(parents=True, exist_ok=True)
-legacy_test_lbl_dir.mkdir(parents=True, exist_ok=True)
+baseline_weight = PROJECT_ROOT / "runs/detect/train_baseline/weights/best.pt"
+aug_weight = PROJECT_ROOT / "runs/detect/train_domain_tuned/weights/best.pt"
 
-test_images = list((MASTER_DATASET_DIR / "images" / "test").glob("*.webp"))
-if list(legacy_test_img_dir.glob("*.jpg")):
-    print("✅ Legacy Test Set이 이미 존재하여 생성을 건너뜁니다.")
-else:
-    print("⏳ Legacy test set 생성 중...")
-    for img_path in test_images:
+if baseline_weight.exists() and aug_weight.exists():
+    print("⏳ Baseline 및 Augmented 모델 가중치 로드 중...")
+    model_base = YOLO(str(baseline_weight))
+    model_aug = YOLO(str(aug_weight))
+
+    val_images = list((MASTER_DATASET_DIR / "images" / "val").glob("*.webp"))
+    sample_images = random.sample(val_images, min(5, len(val_images)))
+
+    output_dir = PROJECT_ROOT / "runs" / "legacy_visual_comparison"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for i, img_path in enumerate(sample_images):
         img = cv2.imread(str(img_path))
         if img is None:
             continue
+
+        # 레거시 훼손 모사
         degraded = simulate_legacy_degradation(img)
-        cv2.imwrite(str(legacy_test_img_dir / (img_path.stem + ".jpg")), degraded)
-        lbl_src = MASTER_DATASET_DIR / "labels" / "test" / (img_path.stem + ".txt")
-        if lbl_src.exists():
-            shutil.copy(lbl_src, legacy_test_lbl_dir / lbl_src.name)
 
-legacy_yaml_path = MASTER_DATASET_DIR / "dataset_legacy_test.yaml"
-with open(legacy_yaml_path, "w", encoding="utf-8") as f:
-    yaml.dump(
-        {
-            "path": str(MASTER_DATASET_DIR.resolve()),
-            "train": "images/train",
-            "val": "images/legacy_test",
-            "names": class_names,
-        },
-        f,
-        allow_unicode=True,
+        # 추론
+        res_base = model_base.predict(degraded, imgsz=640, verbose=False)[0]
+        res_aug = model_aug.predict(degraded, imgsz=640, verbose=False)[0]
+
+        # 결과 이미지 렌더링
+        img_base = res_base.plot()
+        img_aug = res_aug.plot()
+
+        # BGR -> RGB
+        img_base_rgb = cv2.cvtColor(img_base, cv2.COLOR_BGR2RGB)
+        img_aug_rgb = cv2.cvtColor(img_aug, cv2.COLOR_BGR2RGB)
+
+        # 시각화 비교 플롯
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+        axes[0].imshow(img_base_rgb)
+        axes[0].set_title(f"Baseline Prediction", fontsize=14, fontweight="bold")
+        axes[0].axis("off")
+
+        axes[1].imshow(img_aug_rgb)
+        axes[1].set_title(f"Augmented Prediction", fontsize=14, fontweight="bold")
+        axes[1].axis("off")
+
+        plt.tight_layout()
+        save_path = output_dir / f"compare_{i + 1}.png"
+        plt.savefig(save_path, dpi=150)
+        print(f"✅ 시각화 저장 완료: {save_path}")
+        plt.show()
+
+    print(
+        f"\n🎉 눈으로 직접 비교할 수 있는 시각화 결과가 {output_dir} 에 저장되었습니다."
     )
-
-print("\n📊 Baseline 모델 → Legacy Test Set 평가")
-baseline_weight = PROJECT_ROOT / "runs/detect/train_baseline/weights/best.pt"
-legacy_baseline_metrics = None
-if baseline_weight.exists():
-    model_base_eval = YOLO(str(baseline_weight))
-    legacy_baseline_metrics = model_base_eval.val(data=str(legacy_yaml_path))
 else:
-    print("⚠️ Baseline 가중치 없음 — Legacy 비교 스킵")
-
-print("\n📊 Augmented 모델 → Legacy Test Set 평가")
-aug_weight = PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
-legacy_aug_metrics = None
-if aug_weight.exists():
-    model_aug_eval = YOLO(str(aug_weight))
-    legacy_aug_metrics = model_aug_eval.val(data=str(legacy_yaml_path))
-
-# ── Baseline vs Augmented on Legacy Test Set comparison ──
-if legacy_baseline_metrics is not None and legacy_aug_metrics is not None:
-    base_map50 = legacy_baseline_metrics.results_dict.get("metrics/mAP50(B)", 0)
-    aug_map50 = legacy_aug_metrics.results_dict.get("metrics/mAP50(B)", 0)
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    models = ["Baseline\n(Default Aug)", "Augmented\n(Domain Aug + Rotation)"]
-    scores = [base_map50, aug_map50]
-    colors = ["#FF6B6B", "#4ECDC4"]
-    bars = ax.bar(
-        models, scores, color=colors, width=0.5, edgecolor="white", linewidth=2
+    print(
+        "⚠️ Baseline 또는 Augmented 모델 가중치가 아직 생성되지 않았습니다. Phase 3 학습을 먼저 완료하세요."
     )
-    for bar, score in zip(bars, scores):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 0.01,
-            f"{score:.3f}",
-            ha="center",
-            va="bottom",
-            fontsize=14,
-            fontweight="bold",
-        )
-    ax.set_ylabel("mAP@50", fontsize=13)
-    ax.set_title(
-        "Legacy Test Set: Baseline vs Augmented", fontsize=15, fontweight="bold"
-    )
-    ax.set_ylim(0, max(scores) * 1.2 if max(scores) > 0 else 1.0)
-    ax.grid(axis="y", linestyle=":", alpha=0.5)
-    plt.tight_layout()
-    legacy_comp_path = PROJECT_ROOT / "runs" / "legacy_baseline_vs_augmented.png"
-    plt.savefig(legacy_comp_path, dpi=200, bbox_inches="tight")
-    plt.show()
-    print(f"✅ Legacy 비교 저장: {legacy_comp_path}")
 
 # %% [markdown]
-# ## 7. [Phase 3] OCR 전이학습 (Transfer Learning)
+# ## 5. [Phase 4] OCR 전이학습 (8클래스 단일 모델 vs 2-Stage 전이학습 비교)
 # - **아키텍처 확정 (8클래스 동시 학습의 한계 극복)**: 가구/구조물(7)과 OCR(1)을 8클래스로 동시 학습했을 때, 객체 형태 특징과 텍스트 박스 비율이 충돌하여 전체 성능(mAP)이 하락하는 현상을 발견했습니다.
 # - **왜 전이학습인가?**: 이를 극복하기 위해 텍스트 인식은 배제하고, YOLO를 이용해 **글자가 위치한 구역(BBox)만 빠르게 탐지**하는 2-Stage 모델로 분리했습니다.
 # - 7클래스 마스터 모델이 학습한 도면 특성 가중치(`best.pt`)를 넘겨받아 전이학습을 수행하면, 8클래스 동시 학습이나 맨바닥(Scratch) 학습보다 압도적인 수렴 속도와 정확도를 달성합니다. 이것이 전이학습을 도입한 핵심 이유입니다.
 
 # %%
 print("=" * 60)
-print("🚀 [Phase 3] OCR 텍스트 탐지용 전이학습 (Transfer Learning) 시작")
+print("🚀 [Phase 4] OCR 텍스트 탐지용 전이학습 (Transfer Learning) 시작")
 print("=" * 60)
 
 # ──────────────────────────────────────────────
@@ -782,11 +687,11 @@ if not ocr_yaml_path.exists():
     print("⚠️ OCR 데이터셋의 dataset.yaml을 찾을 수 없습니다. 데이터셋을 확인해주세요.")
 else:
     # 7클래스 마스터 모델의 황금 가중치 로드
-    best_weight_path = PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
+    best_weight_path = PROJECT_ROOT / "runs/detect/train_domain_tuned/weights/best.pt"
 
     if not best_weight_path.exists():
         raise FileNotFoundError(
-            f"⚠️ 전이학습을 위한 가중치({best_weight_path})가 없습니다. Phase 2 학습을 먼저 완료하세요."
+            f"⚠️ 전이학습을 위한 가중치({best_weight_path})가 없습니다. Phase 3 학습을 먼저 완료하세요."
         )
 
     print(
@@ -1158,7 +1063,7 @@ else:
         print(f"✅ 1대1 실체 탐지 비교 이미지 저장 완료: {vis_save_path}")
 
 # %% [markdown]
-# ## 8. [Phase 4] 실전 도면 추론 파이프라인 (Ensemble Inference)
+# ## 6. [Phase 5] 최종 전체 파이프라인 실전 추론 (Overall Pipeline & Preprocessing)
 # - 7클래스 마스터 모델과 OCR 전이학습 모델을 **앙상블(Ensemble)** 방식으로 결합합니다.
 # - 도면 한 장에 대해 두 모델을 순차적으로 돌리고 결과 BBox를 하나의 캔버스에 병합합니다.
 # - SAHI 슬라이싱을 적용하여 고해상도 도면에서도 작은 객체를 놓치지 않습니다.
@@ -1169,16 +1074,8 @@ from sahi.predict import get_sliced_prediction
 import matplotlib.patches as mpatches
 
 
-# YOLO 학습 순서 ID → 클래스 이름
-MASTER_ID_TO_NAME = {
-    0: "toilet",
-    1: "washbasin",
-    2: "sink",
-    3: "bathtub",
-    4: "gas_stove",
-    5: "door",
-    6: "window",
-}
+# YOLO 학습 순서 ID → 클래스 이름 (상단 class_names 재사용, DRY)
+MASTER_ID_TO_NAME = class_names
 
 
 def draw_colored_boxes(img_cv2, predictions, id_to_name_map):
@@ -1212,6 +1109,10 @@ def run_ensemble_sahi_inference(image_path, master_model_path, ocr_model_path):
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
+    # ── 0. Phase 2 전처리 파이프라인 적용 ──
+    print("🧹 [0/2] Adaptive Gaussian 전처리 적용 중...")
+    preprocessed_img = apply_adaptive_gaussian_preprocessing(image_path)
+
     # ── 1. 7클래스 마스터 모델 추론 ──
     print("🔍 [1/2] 7클래스(가구/구조물) 탐지 중...")
     master_det = AutoDetectionModel.from_pretrained(
@@ -1221,7 +1122,7 @@ def run_ensemble_sahi_inference(image_path, master_model_path, ocr_model_path):
         device=device,
     )
     master_result = get_sliced_prediction(
-        str(image_path),
+        preprocessed_img,
         master_det,
         slice_height=512,
         slice_width=512,
@@ -1238,7 +1139,7 @@ def run_ensemble_sahi_inference(image_path, master_model_path, ocr_model_path):
         device=device,
     )
     ocr_result = get_sliced_prediction(
-        str(image_path),
+        preprocessed_img,
         ocr_det,
         slice_height=512,
         slice_width=512,
@@ -1248,7 +1149,8 @@ def run_ensemble_sahi_inference(image_path, master_model_path, ocr_model_path):
 
     # ── 3. 캔버스에 앙상블 그리기 ──
     print("✨ 두 모델의 결과를 하나의 캔버스에 병합합니다...")
-    img_cv2 = cv2.imread(str(image_path))
+    # 원본 이미지가 아닌, 전처리된 이미지(망점이 제거된 상태) 위에 그리기
+    img_cv2 = preprocessed_img.copy()
     img_cv2 = cv2.cvtColor(img_cv2, cv2.COLOR_BGR2RGB)
 
     # 마스터 모델 결과 그리기
@@ -1347,9 +1249,7 @@ def run_ensemble_sahi_inference(image_path, master_model_path, ocr_model_path):
 
     plt.tight_layout()
 
-    # 결과 저장
-    export_dir = PROJECT_ROOT / "runs" / "inference"
-    export_dir.mkdir(parents=True, exist_ok=True)
+    # 결과 저장 (export_dir은 상단에서 이미 생성됨)
     save_path = export_dir / (Path(image_path).stem + "_ensemble.png")
     fig.savefig(str(save_path), dpi=150, bbox_inches="tight")
     plt.show()
@@ -1372,7 +1272,7 @@ if RAW_LEGACY_DIR.exists():
     )
     if test_images:
         best_master_path = str(
-            PROJECT_ROOT / "runs/detect/train_augmented/weights/best.pt"
+            PROJECT_ROOT / "runs/detect/train_domain_tuned/weights/best.pt"
         )
         best_ocr_path = str(
             PROJECT_ROOT / "runs/detect/train_ocr_transfer/weights/best.pt"

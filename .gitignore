@@ -17,3 +17,11 @@ venv/
 .ipynb_checkpoints/
 .vscode/
 jupytext.toml
+
+# Generated Datasets and Archives
+master_dataset/
+ocr_dataset/
+*.zst
+dataset_*.yaml
+dataset.yaml
+train_*.txt

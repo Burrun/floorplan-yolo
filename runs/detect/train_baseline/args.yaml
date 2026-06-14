@@ -1,7 +1,7 @@
 task: detect
 mode: train
 model: yolov8m.pt
-data: /teamspace/studios/this_studio/floorplan-yolo/data/master_dataset/dataset.yaml
+data: /teamspace/studios/this_studio/floorplan-yolo/master_dataset/dataset_1500.yaml
 epochs: 150
 time: null
 patience: 20
