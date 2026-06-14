@@ -1,0 +1,5 @@
+[preset]
+name = "none"
+
+[typeChecking]
+mode = "off"

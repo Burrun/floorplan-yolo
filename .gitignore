@@ -1,0 +1,27 @@
+# Dataset and weights
+*.zip
+content/
+data/
+notebooks/yolo*.pt
+
+
+
+# Python and virtual environments
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+
+# Jupytext and IDE
+.ipynb_checkpoints/
+.vscode/
+jupytext.toml
+
+# Generated Datasets and Archives
+master_dataset/
+ocr_dataset/
+*.zst
+dataset_*.yaml
+dataset.yaml
+train_*.txt
