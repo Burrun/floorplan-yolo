@@ -1,0 +1,51 @@
+# 🎯 프로젝트 간이 목표 (Short-term Goal)
+
+## 1. 핵심 목적
+현재 확보된 데이터셋(`val/test`)은 비교적 깔끔한 최신(Clean) 도면 기준입니다. 
+따라서 노이즈, 흑백화 등의 증강(Augmentation)을 적용하면 이 깔끔한 검증셋에서는 오히려 성능이 하락하는 현상이 발생합니다.
+
+우리의 진짜 타겟은 **'오래되고 보관 상태가 나쁜 레거시(Legacy) 도면'**을 디지털화하는 것입니다. 
+
+---
+
+## 2. 파이프라인 구조 (Grill-Me 세션 결과 확정)
+
+### Phase 1: Data Scaling Ablation (`object_layout`)
+- 100~1000장, **20 에폭**으로 수렴점 탐색
+- L자 그래프가 아닌, 점진적 상승 곡선 확보
+
+### Phase 2: Augmentation Ablation (`object_layout`)
+- **2-A**: Baseline vs Augmented → 깨끗한 val 셋 비교 (50 에폭)
+- **2-B** ⭐: **Simulated Legacy Test Set** 구축
+  - 기존 test 셋 50장에 OpenCV로 황변/노이즈/해상도 저하 적용
+  - 핵심 논증: "Clean val에서는 Baseline 우세, Legacy Test에서는 Augmented 압승"
+
+### Phase 3: Transfer Learning (`ocr`)
+- Scratch vs Transfer, **30 에폭**으로 공정 비교
+- 도면 도메인 특징의 OCR 태스크 전이 효과 증명
+
+### Phase 4: 실전 추론 + JSON 후처리
+- SAHI 슬라이싱 추론 + Augmented 모델(`best.pt`) 사용
+- **앙상블 (Master + OCR 융합 로직)** ⭐: 
+  - 단순 NMS가 아닌 **Confidence-Aware Arbitration(확신도 중재)** 및 **IoA(포함 관계) 로직** 적용
+  - 큰 도면 객체(문/창문) 안에 포함된 작은 Text 박스는 삭제하지 않고 속성(Attribute)으로 유지
+- **Topological Post-processing**: 좌표 직교화(Orthogonalize) + 스냅(Snap)
+- Raw JSON vs Post-processed JSON Before/After 시각화
+
+---
+
+## 3. 삭제된 항목
+- ~~Phase 4 (Master 통합 모델)~~: BBox→Polygon 변환의 구조적 문제, 클래스 불균형, 15에폭으로 20+클래스 학습의 비현실성 → **삭제. Future Work로 이동.**
+
+## 4. Future Work
+- **[단기 과제] 3D 렌더링용 JSON 후처리 파이프라인 (Phase 5) 알고리즘 구현**
+  - **1단계 (Confidence 추출):** `results[0].boxes.conf`를 활용하여 바운딩 박스의 객체 좌표(x, y, w, h)뿐만 아니라 YOLO 모델이 내뱉는 고유의 확신도(Confidence Score) 배열을 명시적으로 추출.
+  - **2단계 (IoA 및 중재 로직 고도화):** 
+    - **IoA (Intersection over Area):** 일반적인 IoU가 아닌 '작은 박스 넓이' 대비 '겹치는 넓이'를 계산. (예: `겹치는 넓이 / 텍스트 박스 넓이 > 0.8` 이면 텍스트가 가구 내부에 속한 것으로 간주하여 부모-자식 계층으로 JSON 구조화)
+    - **Confidence-Aware Arbitration:** Master 모델과 OCR 모델이 동일한 위치에 대해 서로 다른 예측을 내놓았을 때, 추출해둔 `box.conf` 값을 비교하여 확신도가 더 높은 예측값을 채택하고 나머지는 필터링(제거)하는 중재 로직 적용.
+  - **3단계 (Topological 스냅):** 객체(가구/문)의 각도를 0, 90, 180, 270도로 직교화(Orthogonalize)하고 가까운 가상 벽체 좌표로 밀착(Snap) 처리.
+  - **4단계 (JSON Export):** 추출된 데이터를 `structures`, `furnitures`, `rooms_ocr` 계층으로 분리하여 3D 엔진(Unity/WebGL) 호환 JSON 구조로 자동 저장(`json.dump`).
+- End-to-End Vectorization (RoomFormer, FloorplanVLM 등)
+- GNN 기반 Topological Consistency 모델
+- Pix2Pix/Diffusion 기반 도면 복원 전처리
+- 레거시 도면 소량 라벨링 → Fine-tuning으로 상용화
