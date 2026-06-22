@@ -75,9 +75,10 @@ AI Hub 아파트 도면 데이터 활용.
 3. 런타임 → **L4 GPU** 설정.
 4. 셀 실행.
 
-### 로컬 IDE (코드 뷰어 및 편집용)
+### Modal 클라우드 GPU (A10G)
 ```bash
-source .venv/bin/activate
-pip install -r requirements.txt
+pip install modal
+modal setup          # 최초 1회 인증
+modal run modal_train.py
 ```
-> `.py` 스크립트 편집, Jupytext로 `.ipynb` 동기화.
+> 학습 완료 후 `runs/` 폴더가 자동으로 로컬에 다운로드됩니다.

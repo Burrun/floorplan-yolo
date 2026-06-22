@@ -21,8 +21,8 @@
 *   **노이즈 트레이드오프 방어:** 이진화 후 글씨 주변에 미세한 픽셀 노이즈가 발생할 수 있으나, 이는 형태를 기반으로 탐지하는 YOLO의 합성곱(Convolution) 특성상 무시됩니다. 오히려 망점 배경을 완전히 날려버림으로써 얻는 구조적 명확성의 이득이 압도적이므로 본 전처리의 도입이 정당화됩니다.
 
 ### [시각적 비교: 원본 vs 적응형 가우시안]
-![원본 이미지 (Yellowing & 망점 노이즈)](./floorplan-yolo/temp_preprocessing_results/legacy_test_02_0_Original.jpg)
-![M2 전처리 완료 (배경 노이즈 완벽 제거)](./floorplan-yolo/temp_preprocessing_results/legacy_test_02_M2_Adaptive_Gaussian.jpg)
+![원본 이미지 (Yellowing & 망점 노이즈)](./temp_preprocessing_results/legacy_test_02_0_Original.jpg)
+![M2 전처리 완료 (배경 노이즈 완벽 제거)](./temp_preprocessing_results/legacy_test_02_M2_Adaptive_Gaussian.jpg)
 
 ---
 
@@ -50,10 +50,18 @@ Baseline과 Domain-Tuned 모델의 추론 결과를 레거시 열화(황변, 퇴
 
 ---
 
-## 6. 최종 전체 파이프라인 (Phase 5: Overall Pipeline)
+## 6. 최종 전체 파이프라인 및 슬라이싱 기법 (Phase 5: Overall Pipeline & Slicing)
 위 단계를 거쳐 완성된 최종 레거시 도면 디지털화 시스템의 파이프라인은 다음과 같습니다.
 1.  **입력 및 전처리 (Phase 2):** Raw 스캔 이미지를 받아 적응형 가우시안 이진화를 통해 망점 노이즈와 음영을 제거합니다.
 2.  **구조물 탐지 (Phase 3 마스터 모델):** Domain-Tuned 하이퍼파라미터로 강건하게 학습된 모델이 가구 5종(toilet, washbasin, sink, bathtub, gas_stove) 및 구조물 2종(door, window)을 추출합니다.
 3.  **텍스트 탐지 (Phase 4 OCR 전용 모델):** 마스터 모델의 지식을 전이받아 노이즈 저항성을 극대화한 전용 모델이 텍스트 바운딩 박스를 추출합니다.
 4.  **SAHI 슬라이싱 앙상블 (Phase 5):** 두 모델의 결과를 512×512 슬라이싱(overlap 20%)으로 고해상도 도면의 작은 객체까지 탐지 후, 하나의 캔버스에 병합합니다.
 5.  **JSON 구조화:** 앙상블 BBox 좌표를 `structures`(문, 창문), `furnitures`(가구 5종), `ocr`(텍스트) 카테고리별로 분리하여 JSON 파일로 저장합니다.
+
+### 💡 핵심 추론 기법: 슬라이싱 (Slicing Aided Hyper Inference, SAHI) 도입 이유
+본 프로젝트에서는 추론 단계에 슬라이싱 기법을 핵심적으로 적용하였습니다.
+
+* **슬라이싱(Slicing)이란?** 고해상도의 원본 이미지를 일정 크기(예: 512×512)의 작은 조각(Patch)들로 자르고, 가장자리에서 객체가 잘리지 않도록 일정 비율(예: 20%)로 겹치게(Overlap) 분할하여 각각 추론한 뒤, 중복을 제거(NMS)하며 다시 하나의 큰 캔버스로 병합하는 기법입니다.
+* **적용 이유 (문제 상황 및 해결):**
+  1. **해상도 축소에 따른 픽셀 유실 방지:** 건축 도면은 보통 4K 이상의 초고해상도 이미지입니다. 이를 YOLO의 모델 기본 입력 크기(예: 640×640)로 한 번에 강제 축소(Resize)할 경우, 작은 글씨(OCR 텍스트)나 가스레인지의 화구 같은 미세한 객체들은 픽셀이 완전히 뭉개져 모델이 인식할 수 없는 상태가 됩니다.
+  2. **극소형 객체(Small Object) 탐지율 극대화:** 슬라이싱을 적용하면 원본 도면을 축소하지 않고 원래 해상도 그대로 모델에게 일부분씩 보여줄 수 있습니다. 이를 통해 작은 가구 아이콘이나 텍스트 박스를 누락 없이 압도적으로 높은 재현율(Recall)로 정확하게 탐지할 수 있습니다.

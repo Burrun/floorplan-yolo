@@ -25,3 +25,9 @@ ocr_dataset/
 dataset_*.yaml
 dataset.yaml
 train_*.txt
+
+# Large presentation files and fonts
+ppt_workspace/*.pdf
+ppt_workspace/*.pptx
+ppt_workspace/*.ttf
+ppt_workspace/*.otf

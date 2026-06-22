@@ -40,12 +40,12 @@ import yaml
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image, ImageDraw
+from PIL import Image
 from pathlib import Path
 from ultralytics import YOLO
 import subprocess
 import cv2
-from concurrent.futures import ThreadPoolExecutor
+
 
 # ──────────────────────────────────────────────
 # 🎯 재현성 확보 (Reproducibility)
@@ -70,21 +70,15 @@ if IS_COLAB:
     os.chdir(str(PROJECT_ROOT))
     print(f"[Colab] 프로젝트 루트: {PROJECT_ROOT}")
 else:
-    # 로컬: 스크립트 위치 기준으로 프로젝트 루트 결정
-    _cwd = Path(os.getcwd())
-    if _cwd.name == "notebooks":
-        PROJECT_ROOT = _cwd.parent
-    elif (_cwd / "floorplan-yolo").exists():
-        PROJECT_ROOT = _cwd / "floorplan-yolo"
-    else:
-        PROJECT_ROOT = _cwd
-    print(f"[로컬] 프로젝트 루트: {PROJECT_ROOT}")
+    # 무조건 현재 실행 경로를 프로젝트 루트로 간주 (로컬 floorplan-yolo 또는 클라우드 /root/pj)
+    PROJECT_ROOT = Path.cwd()
+    print(f"[로컬/클라우드 통합] 프로젝트 루트: {PROJECT_ROOT}")
 
 # YOLO 환경 변수 강제 설정 (절대 경로 및 노트북 내 폴더 생성 방지)
 from ultralytics import settings
 
 settings.update(
-    {"datasets_dir": str(PROJECT_ROOT / "data"), "runs_dir": str(PROJECT_ROOT / "runs")}
+    {"datasets_dir": str(PROJECT_ROOT), "runs_dir": str(PROJECT_ROOT / "runs")}
 )
 # GPU 정보 출력
 if torch.cuda.is_available():
@@ -101,28 +95,20 @@ print("Libraries imported successfully.")
 #
 
 # %%
-# "NORMAL" : RTX 3060/4060/5060 등 8GB~12GB VRAM 용 (안정성 위주)
-# "pro"      : L40S, A100 등 24GB~48GB VRAM 용 (최고 속도 및 성능 펌핑)
+# ──────────────────────────────────────────────
+# ⚙️ Modal A10G (24GB VRAM) 타겟 하드웨어 프로필
+# ──────────────────────────────────────────────
+BASE_WEIGHT = "yolov8m.pt"  # Medium 모델: Nano 대비 압도적 성능, Phase 2~4 전체 적용
 
-HARDWARE_PROFILE = "pro"  # <--- 여기서 모드만 바꾸세요!
-
-if HARDWARE_PROFILE == "pro":
-    BASE_WEIGHT = (
-        "yolov8m.pt"  # (Medium 모델) Nano 대비 압도적 성능, 페이즈 2~4 전체 적용
-    )
-    # VRAM 50GB / RAM 120GB 한도를 고려한 '절대 안 터지는(Anti-OOM)' 최고 효율 세팅
-    BATCH_SIZE = 32  # 64는 간혹 피크치에서 튈 수 있으므로 32로 안정성 확보 (VRAM 약 12~15GB 소모 추정)
-    WORKERS = 8  # RAM(공유 메모리) 폭발을 막기 위해 16 대신 8로 타협
-    print(
-        f"🚀 [PRO 모드 활성화] {BASE_WEIGHT} 가중치 / Batch={BATCH_SIZE} / Workers={WORKERS} (안정성+고속 세팅 완료!)"
-    )
-else:
-    BASE_WEIGHT = "yolov8n.pt"  # (Nano 모델) VRAM 절약 및 빠른 학습
-    BATCH_SIZE = 16
-    WORKERS = 4
-    print(
-        f"💻 [NORMAL 모드 활성화] {BASE_WEIGHT} 가중치 및 Batch={BATCH_SIZE}로 안정성 세팅 완료!"
-    )
+# A10G VRAM 24GB 기준 보수적 세팅
+# - YOLOv8m + imgsz=640 + cache=True → 배치당 약 1.0~1.3GB VRAM 소모
+# - Batch=16: 약 16~20GB 사용 → 피크 메모리 고려 시 4~8GB 여유 확보 (OOM 방어)
+# - Batch=32는 Mosaic 증강 + cache 동시 적용 시 피크에서 터질 위험 있음
+BATCH_SIZE = 16  # 24GB에서는 16이 제일 안전한 스윗스팟
+WORKERS = 0  # multiprocessing spawn/forkserver 충돌 방지를 위해 0으로 강제 설정
+print(
+    f"🚀 [A10G 모드] {BASE_WEIGHT} / Batch={BATCH_SIZE} / Workers={WORKERS} (24GB VRAM 보수적 세팅)"
+)
 
 # %% [markdown]
 # ## 0-2. 7클래스 마스터 데이터셋 연동 및 압축 해제
@@ -431,10 +417,8 @@ else:
 # - Adaptive Gaussian Thresholding을 활용하여 레거시 스캔본의 망점과 음영을 완벽히 제거합니다.
 # - 실전 추론(Inference) 단계에서 외부 입력 이미지(Legacy)가 들어올 때 즉시 적용됩니다.
 
-# %%
-import cv2
-import numpy as np
 
+# %%
 def apply_adaptive_gaussian_preprocessing(image_path_or_img) -> np.ndarray:
     """
     레거시 도면 이미지의 망점, 변색, 균일하지 않은 조명을 제거하는 전처리 모듈입니다.
@@ -445,22 +429,23 @@ def apply_adaptive_gaussian_preprocessing(image_path_or_img) -> np.ndarray:
         img = cv2.imread(str(image_path_or_img))
     else:
         img = image_path_or_img.copy()
-        
+
     if img is None:
         raise ValueError("이미지를 로드할 수 없습니다.")
 
     # 1. Grayscale 변환
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
+
     # 2. Adaptive Gaussian 이진화 (Block: 21, C: 10)
     # 주변 픽셀(21x21)의 가우시안 가중 평균을 기준으로 이진화하여 배경의 우글우글한 망점을 완전히 날려버립니다.
     processed = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 21, 10
     )
-    
+
     # 3. YOLO 추론기(3채널 RGB/BGR)에 맞춰 채널 변환
     processed_bgr = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
     return processed_bgr
+
 
 print("✅ [Phase 2] Adaptive Gaussian 전처리 파이프라인 함수 로드 완료")
 
@@ -523,7 +508,7 @@ else:
         perspective=0.0005,  # 원근 왜곡 강도 (0.05%): 스캔 시 종이가 울거나 삐뚤어진 상태 모사
         scale=0.5,  # 스케일 변형 (+/- 50%): 다양한 해상도 및 도면 배율(확대/축소) 대응
         mosaic=1.0,  # 모자이크 증강 확률 (100%): 4장의 도면을 하나로 합쳐 모델의 강건성 극대화
-        gray=0.2,  # 흑백 변환 (20%): 누렇게 바랜 종이나 다채로운 스캔본을 흑백으로 처리하여 선 구조에만 집중하도록 유도
+        bgr=0.2,  # BGR 채널 반전 (20%): 특정 잉크 색상에 과적합되는 것을 방지 (gray 파라미터 대체)
         flipud=0.5,  # 상하 반전 (50%): 위아래가 뒤집혀 스캔된 도면에 대응하여 인식률 극대화
     )
     torch.cuda.empty_cache()
@@ -683,384 +668,390 @@ else:
 
 ocr_yaml_path = OCR_DIR / "dataset.yaml"
 
-if not ocr_yaml_path.exists():
-    print("⚠️ OCR 데이터셋의 dataset.yaml을 찾을 수 없습니다. 데이터셋을 확인해주세요.")
-else:
-    # 7클래스 마스터 모델의 황금 가중치 로드
-    best_weight_path = PROJECT_ROOT / "runs/detect/train_domain_tuned/weights/best.pt"
+# 환경 무관하게 절대 경로가 보장되도록 매번 생성 (마스터 데이터셋과 동일한 방식)
+import yaml
 
-    if not best_weight_path.exists():
-        raise FileNotFoundError(
-            f"⚠️ 전이학습을 위한 가중치({best_weight_path})가 없습니다. Phase 3 학습을 먼저 완료하세요."
-        )
+ocr_config = {
+    "path": str(OCR_DIR.resolve()),
+    "train": "images/train",
+    "val": "images/val",
+    "test": "images/test",
+    "names": {0: "text"},
+}
+with open(ocr_yaml_path, "w", encoding="utf-8") as f:
+    yaml.dump(ocr_config, f, allow_unicode=True, default_flow_style=False)
+print(f"✅ OCR dataset.yaml 절대 경로 통합 생성 완료: {ocr_yaml_path}")
 
+# 7클래스 마스터 모델의 황금 가중치 로드
+best_weight_path = PROJECT_ROOT / "runs/detect/train_domain_tuned/weights/best.pt"
+
+if not best_weight_path.exists():
+    raise FileNotFoundError(
+        f"⚠️ 전이학습을 위한 가중치({best_weight_path})가 없습니다. Phase 3 학습을 먼저 완료하세요."
+    )
+
+print(
+    f"✅ {best_weight_path.name} 가중치를 성공적으로 불러왔습니다. 전이학습을 시작합니다!"
+)
+
+ocr_transfer_weight = (
+    PROJECT_ROOT / "runs/detect/train_ocr_transfer/weights/best.pt"
+)
+if ocr_transfer_weight.exists():
     print(
-        f"✅ {best_weight_path.name} 가중치를 성공적으로 불러왔습니다. 전이학습을 시작합니다!"
+        f"✅ 이미 학습된 OCR 전이학습 가중치가 존재합니다. 학습을 스킵합니다: {ocr_transfer_weight}"
+    )
+else:
+    # 전이학습(Transfer Learning)
+    model_transfer = YOLO(str(best_weight_path))
+    results_transfer = model_transfer.train(
+        data=str(ocr_yaml_path),
+        epochs=50,  # 클래스가 1개지만 견고한 학습을 위해 에폭 상향
+        imgsz=640,
+        batch=BATCH_SIZE,
+        workers=WORKERS,
+        cache=True,
+        project=str(PROJECT_ROOT / "runs/detect"),
+        name="train_ocr_transfer",
+        patience=10,
     )
 
-    ocr_transfer_weight = (
-        PROJECT_ROOT / "runs/detect/train_ocr_transfer/weights/best.pt"
+    torch.cuda.empty_cache()
+    gc.collect()
+    print("🎉 OCR 전이학습이 성공적으로 완료되었습니다!")
+
+# ──────────────────────────────────────────────
+# [비교 검증] 실험 A: Scratch 모델 (비교군) 학습
+# ──────────────────────────────────────────────
+# 전이학습(Transfer)의 압도적 효율을 증명하기 위해, 아무런 사전 지식이 없는
+# 랜덤 초기화 상태(Scratch)에서 동일하게 50에폭 OCR 학습을 진행합니다.
+# (이 결과는 8클래스 동시 학습 시 발생하는 수렴 지연 및 성능 저하와 동일한 양상을 보입니다.)
+ocr_scratch_weight = PROJECT_ROOT / "runs/detect/train_ocr_scratch/weights/best.pt"
+if ocr_scratch_weight.exists():
+    print(f"✅ 이미 학습된 OCR Scratch 가중치가 존재합니다: {ocr_scratch_weight}")
+else:
+    print("🚀 [비교군] OCR Scratch (yolov8m.pt) 학습 시작...")
+    model_scratch = YOLO(BASE_WEIGHT)  # 공정한 비교를 위해 Medium 모델 동일 사용
+    results_scratch = model_scratch.train(
+        data=str(ocr_yaml_path),
+        epochs=50,
+        imgsz=640,
+        batch=BATCH_SIZE,
+        workers=WORKERS,
+        cache=True,
+        project=str(PROJECT_ROOT / "runs/detect"),
+        name="train_ocr_scratch",
+        patience=10,
     )
-    if ocr_transfer_weight.exists():
-        print(
-            f"✅ 이미 학습된 OCR 전이학습 가중치가 존재합니다. 학습을 스킵합니다: {ocr_transfer_weight}"
+    torch.cuda.empty_cache()
+    gc.collect()
+
+# ──────────────────────────────────────────────
+# [시각화] 전체적 성능(mAP) & 1대1 실체 탐지 사진 비교
+# ──────────────────────────────────────────────
+print("\n📊 [성능 비교] Scratch vs Transfer 전체 성능 및 1대1 탐지 비교")
+# 1. 전체적 성능 (mAP, Precision, Recall) 곡선 비교
+scratch_csv = PROJECT_ROOT / "runs/detect/train_ocr_scratch/results.csv"
+transfer_csv = PROJECT_ROOT / "runs/detect/train_ocr_transfer/results.csv"
+
+if scratch_csv.exists() and transfer_csv.exists():
+    df_scratch = pd.read_csv(scratch_csv)
+    df_transfer = pd.read_csv(transfer_csv)
+
+    df_scratch.columns = df_scratch.columns.str.strip()
+    df_transfer.columns = df_transfer.columns.str.strip()
+
+    col_map = "metrics/mAP50(B)"
+    col_t_loss = "train/box_loss"
+    col_v_loss = "val/box_loss"
+
+    # 3개의 서브플롯 (mAP, Train Loss, Val Loss) - 학습 속도 및 수렴 비교
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6))
+
+    if col_map in df_scratch.columns and col_map in df_transfer.columns:
+        axes[0].plot(
+            df_scratch["epoch"],
+            df_scratch[col_map],
+            label="Scratch",
+            color="#FF6B6B",
+            linestyle="--",
+            linewidth=2.5,
         )
-    else:
-        # 전이학습(Transfer Learning)
-        model_transfer = YOLO(str(best_weight_path))
-        results_transfer = model_transfer.train(
-            data=str(ocr_yaml_path),
-            epochs=50,  # 클래스가 1개지만 견고한 학습을 위해 에폭 상향
-            imgsz=640,
-            batch=BATCH_SIZE,
-            workers=WORKERS,
-            cache=True,
-            project=str(PROJECT_ROOT / "runs/detect"),
-            name="train_ocr_transfer",
-            patience=10,
+        axes[0].plot(
+            df_transfer["epoch"],
+            df_transfer[col_map],
+            label="Transfer",
+            color="#4ECDC4",
+            linewidth=3,
         )
-
-        torch.cuda.empty_cache()
-        gc.collect()
-        print("🎉 OCR 전이학습이 성공적으로 완료되었습니다!")
-
-    # ──────────────────────────────────────────────
-    # [비교 검증] 실험 A: Scratch 모델 (비교군) 학습
-    # ──────────────────────────────────────────────
-    # 전이학습(Transfer)의 압도적 효율을 증명하기 위해, 아무런 사전 지식이 없는
-    # 랜덤 초기화 상태(Scratch)에서 동일하게 50에폭 OCR 학습을 진행합니다.
-    # (이 결과는 8클래스 동시 학습 시 발생하는 수렴 지연 및 성능 저하와 동일한 양상을 보입니다.)
-    ocr_scratch_weight = PROJECT_ROOT / "runs/detect/train_ocr_scratch/weights/best.pt"
-    if ocr_scratch_weight.exists():
-        print(f"✅ 이미 학습된 OCR Scratch 가중치가 존재합니다: {ocr_scratch_weight}")
-    else:
-        print("🚀 [비교군] OCR Scratch (yolov8m.pt) 학습 시작...")
-        model_scratch = YOLO(BASE_WEIGHT)  # 공정한 비교를 위해 Medium 모델 동일 사용
-        results_scratch = model_scratch.train(
-            data=str(ocr_yaml_path),
-            epochs=50,
-            imgsz=640,
-            batch=BATCH_SIZE,
-            workers=WORKERS,
-            cache=True,
-            project=str(PROJECT_ROOT / "runs/detect"),
-            name="train_ocr_scratch",
-            patience=10,
-        )
-        torch.cuda.empty_cache()
-        gc.collect()
-
-    # ──────────────────────────────────────────────
-    # [시각화] 전체적 성능(mAP) & 1대1 실체 탐지 사진 비교
-    # ──────────────────────────────────────────────
-    print("\n📊 [성능 비교] Scratch vs Transfer 전체 성능 및 1대1 탐지 비교")
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    import cv2
-    from PIL import Image
-
-    # 1. 전체적 성능 (mAP, Precision, Recall) 곡선 비교
-    scratch_csv = PROJECT_ROOT / "runs/detect/train_ocr_scratch/results.csv"
-    transfer_csv = PROJECT_ROOT / "runs/detect/train_ocr_transfer/results.csv"
-
-    if scratch_csv.exists() and transfer_csv.exists():
-        df_scratch = pd.read_csv(scratch_csv)
-        df_transfer = pd.read_csv(transfer_csv)
-
-        df_scratch.columns = df_scratch.columns.str.strip()
-        df_transfer.columns = df_transfer.columns.str.strip()
-
-        col_map = "metrics/mAP50(B)"
-        col_t_loss = "train/box_loss"
-        col_v_loss = "val/box_loss"
-
-        # 3개의 서브플롯 (mAP, Train Loss, Val Loss) - 학습 속도 및 수렴 비교
-        fig, axes = plt.subplots(1, 3, figsize=(20, 6))
-
-        if col_map in df_scratch.columns and col_map in df_transfer.columns:
-            axes[0].plot(
-                df_scratch["epoch"],
-                df_scratch[col_map],
-                label="Scratch",
-                color="#FF6B6B",
-                linestyle="--",
-                linewidth=2.5,
-            )
-            axes[0].plot(
-                df_transfer["epoch"],
-                df_transfer[col_map],
-                label="Transfer",
-                color="#4ECDC4",
-                linewidth=3,
-            )
-            axes[0].set_title(
-                "mAP@50 Comparison\n(Overall Detection Accuracy)",
-                fontsize=14,
-                fontweight="bold",
-            )
-            axes[0].set_xlabel("Epochs", fontsize=12)
-            axes[0].set_ylabel("mAP@50", fontsize=12)
-            axes[0].legend(fontsize=11)
-            axes[0].grid(True, linestyle=":", alpha=0.7)
-
-        if col_t_loss in df_scratch.columns and col_t_loss in df_transfer.columns:
-            axes[1].plot(
-                df_scratch["epoch"],
-                df_scratch[col_t_loss],
-                label="Scratch",
-                color="#FF6B6B",
-                linestyle="--",
-                linewidth=2.5,
-            )
-            axes[1].plot(
-                df_transfer["epoch"],
-                df_transfer[col_t_loss],
-                label="Transfer",
-                color="#4ECDC4",
-                linewidth=3,
-            )
-            axes[1].set_title(
-                "Train Box Loss Comparison\n(Convergence Speed)",
-                fontsize=14,
-                fontweight="bold",
-            )
-            axes[1].set_xlabel("Epochs", fontsize=12)
-            axes[1].set_ylabel("Train Box Loss", fontsize=12)
-            axes[1].legend(fontsize=11)
-            axes[1].grid(True, linestyle=":", alpha=0.7)
-
-        if col_v_loss in df_scratch.columns and col_v_loss in df_transfer.columns:
-            axes[2].plot(
-                df_scratch["epoch"],
-                df_scratch[col_v_loss],
-                label="Scratch",
-                color="#FF6B6B",
-                linestyle="--",
-                linewidth=2.5,
-            )
-            axes[2].plot(
-                df_transfer["epoch"],
-                df_transfer[col_v_loss],
-                label="Transfer",
-                color="#4ECDC4",
-                linewidth=3,
-            )
-            axes[2].set_title(
-                "Val Box Loss Comparison\n(Generalization & Stability)",
-                fontsize=14,
-                fontweight="bold",
-            )
-            axes[2].set_xlabel("Epochs", fontsize=12)
-            axes[2].set_ylabel("Val Box Loss", fontsize=12)
-            axes[2].legend(fontsize=11)
-            axes[2].grid(True, linestyle=":", alpha=0.7)
-
-        plt.suptitle(
-            "Training Convergence Comparison: Scratch vs Transfer",
-            fontsize=18,
-            fontweight="bold",
-            y=1.05,
-        )
-        plt.tight_layout()
-
-        comp_save_path = PROJECT_ROOT / "runs" / "ocr_metrics_comparison.png"
-        plt.savefig(comp_save_path, dpi=200, bbox_inches="tight")
-        plt.show()
-        print(f"✅ 학습 수렴(Loss, mAP) 비교 그래프 저장 완료: {comp_save_path}")
-
-        # ── Convergence Speed Comparison ──
-        MAP_THRESHOLD = 0.80
-
-        def find_convergence_epoch(df, col, threshold):
-            """Find first epoch where metric >= threshold."""
-            above = df[df[col] >= threshold]
-            return int(above["epoch"].iloc[0]) if len(above) > 0 else None
-
-        if col_map in df_scratch.columns and col_map in df_transfer.columns:
-            scratch_conv = find_convergence_epoch(df_scratch, col_map, MAP_THRESHOLD)
-            transfer_conv = find_convergence_epoch(df_transfer, col_map, MAP_THRESHOLD)
-            print(f"\n⚡ Convergence Speed (mAP≥{MAP_THRESHOLD}):")
-            if transfer_conv is not None:
-                print(f"   Transfer: {transfer_conv} epochs")
-            else:
-                print(f"   Transfer: did not reach {MAP_THRESHOLD}")
-            if scratch_conv is not None:
-                print(f"   Scratch:  {scratch_conv} epochs")
-            else:
-                print(f"   Scratch:  did not reach {MAP_THRESHOLD}")
-            if transfer_conv and scratch_conv:
-                speedup = scratch_conv / transfer_conv
-                print(f"   → Transfer is {speedup:.1f}x faster convergence")
-
-    # 1-2. 혼동 행렬(Confusion Matrix) 이미지 기반 비교
-    scratch_cm = (
-        PROJECT_ROOT / "runs/detect/train_ocr_scratch/confusion_matrix_normalized.png"
-    )
-    transfer_cm = (
-        PROJECT_ROOT / "runs/detect/train_ocr_transfer/confusion_matrix_normalized.png"
-    )
-
-    if scratch_cm.exists() and transfer_cm.exists():
-        fig, axes = plt.subplots(1, 2, figsize=(20, 8))
-
-        img_cm_s = cv2.imread(str(scratch_cm))
-        if img_cm_s is not None:
-            img_cm_s = cv2.cvtColor(img_cm_s, cv2.COLOR_BGR2RGB)
-            axes[0].imshow(img_cm_s)
         axes[0].set_title(
-            "Scratch: Normalized Confusion Matrix\n(False Positive Rate)",
-            fontsize=15,
-            color="#FF6B6B",
+            "mAP@50 Comparison\n(Overall Detection Accuracy)",
+            fontsize=14,
             fontweight="bold",
         )
-        axes[0].axis("off")
+        axes[0].set_xlabel("Epochs", fontsize=12)
+        axes[0].set_ylabel("mAP@50", fontsize=12)
+        axes[0].legend(fontsize=11)
+        axes[0].grid(True, linestyle=":", alpha=0.7)
 
-        img_cm_t = cv2.imread(str(transfer_cm))
-        if img_cm_t is not None:
-            img_cm_t = cv2.cvtColor(img_cm_t, cv2.COLOR_BGR2RGB)
-            axes[1].imshow(img_cm_t)
+    if col_t_loss in df_scratch.columns and col_t_loss in df_transfer.columns:
+        axes[1].plot(
+            df_scratch["epoch"],
+            df_scratch[col_t_loss],
+            label="Scratch",
+            color="#FF6B6B",
+            linestyle="--",
+            linewidth=2.5,
+        )
+        axes[1].plot(
+            df_transfer["epoch"],
+            df_transfer[col_t_loss],
+            label="Transfer",
+            color="#4ECDC4",
+            linewidth=3,
+        )
         axes[1].set_title(
-            "Transfer: Normalized Confusion Matrix\n(Accurate Target Detection)",
-            fontsize=15,
-            color="#4ECDC4",
+            "Train Box Loss Comparison\n(Convergence Speed)",
+            fontsize=14,
             fontweight="bold",
         )
-        axes[1].axis("off")
+        axes[1].set_xlabel("Epochs", fontsize=12)
+        axes[1].set_ylabel("Train Box Loss", fontsize=12)
+        axes[1].legend(fontsize=11)
+        axes[1].grid(True, linestyle=":", alpha=0.7)
 
-        plt.suptitle(
-            "Confusion Matrix Comparison (Background False Positives Check)",
-            fontsize=18,
-            fontweight="bold",
-        )
-        plt.tight_layout()
-        cm_save_path = PROJECT_ROOT / "runs" / "ocr_cm_comparison.png"
-        plt.savefig(cm_save_path, dpi=200, bbox_inches="tight")
-        plt.show()
-        print(f"✅ 혼동 행렬 비교 이미지 저장 완료: {cm_save_path}")
-
-    # 1-3. PR-Curve 및 F1-Curve 비교 (Trade-off 분석)
-    scratch_f1 = PROJECT_ROOT / "runs/detect/train_ocr_scratch/F1_curve.png"
-    transfer_f1 = PROJECT_ROOT / "runs/detect/train_ocr_transfer/F1_curve.png"
-    scratch_pr = PROJECT_ROOT / "runs/detect/train_ocr_scratch/PR_curve.png"
-    transfer_pr = PROJECT_ROOT / "runs/detect/train_ocr_transfer/PR_curve.png"
-
-    if (
-        scratch_f1.exists()
-        and transfer_f1.exists()
-        and scratch_pr.exists()
-        and transfer_pr.exists()
-    ):
-        fig, axes = plt.subplots(2, 2, figsize=(20, 16))
-
-        # [Row 0] F1 Curve
-        img_f1_s = cv2.cvtColor(cv2.imread(str(scratch_f1)), cv2.COLOR_BGR2RGB)
-        axes[0, 0].imshow(img_f1_s)
-        axes[0, 0].set_title(
-            "Scratch: F1-Confidence Curve\n(Lower Peak F1 Score)",
-            fontsize=15,
+    if col_v_loss in df_scratch.columns and col_v_loss in df_transfer.columns:
+        axes[2].plot(
+            df_scratch["epoch"],
+            df_scratch[col_v_loss],
+            label="Scratch",
             color="#FF6B6B",
-            fontweight="bold",
+            linestyle="--",
+            linewidth=2.5,
         )
-        axes[0, 0].axis("off")
-
-        img_f1_t = cv2.cvtColor(cv2.imread(str(transfer_f1)), cv2.COLOR_BGR2RGB)
-        axes[0, 1].imshow(img_f1_t)
-        axes[0, 1].set_title(
-            "Transfer: F1-Confidence Curve\n(Higher & More Stable Peak F1 Score)",
-            fontsize=15,
+        axes[2].plot(
+            df_transfer["epoch"],
+            df_transfer[col_v_loss],
+            label="Transfer",
             color="#4ECDC4",
+            linewidth=3,
+        )
+        axes[2].set_title(
+            "Val Box Loss Comparison\n(Generalization & Stability)",
+            fontsize=14,
             fontweight="bold",
         )
-        axes[0, 1].axis("off")
+        axes[2].set_xlabel("Epochs", fontsize=12)
+        axes[2].set_ylabel("Val Box Loss", fontsize=12)
+        axes[2].legend(fontsize=11)
+        axes[2].grid(True, linestyle=":", alpha=0.7)
 
-        # [Row 1] PR Curve
-        img_pr_s = cv2.cvtColor(cv2.imread(str(scratch_pr)), cv2.COLOR_BGR2RGB)
-        axes[1, 0].imshow(img_pr_s)
-        axes[1, 0].set_title(
-            "Scratch: Precision-Recall Curve\n(Smaller Area Under Curve)",
-            fontsize=15,
-            color="#FF6B6B",
-            fontweight="bold",
-        )
-        axes[1, 0].axis("off")
-
-        img_pr_t = cv2.cvtColor(cv2.imread(str(transfer_pr)), cv2.COLOR_BGR2RGB)
-        axes[1, 1].imshow(img_pr_t)
-        axes[1, 1].set_title(
-            "Transfer: Precision-Recall Curve\n(Larger Area = Superior Detection)",
-            fontsize=15,
-            color="#4ECDC4",
-            fontweight="bold",
-        )
-        axes[1, 1].axis("off")
-
-        plt.suptitle(
-            "Final Model Evaluation (F1-Score & PR-Curve Trade-off)",
-            fontsize=20,
-            fontweight="bold",
-            y=0.95,
-        )
-        plt.tight_layout()
-        curves_save_path = PROJECT_ROOT / "runs" / "ocr_curves_comparison.png"
-        plt.savefig(curves_save_path, dpi=200, bbox_inches="tight")
-        plt.show()
-        print(f"✅ PR-Curve 및 F1-Curve 비교 이미지 저장 완료: {curves_save_path}")
-
-    # 2. 1대1 실체 탐지 사진 비교 (Same Image)
-    # Validation 셋에서 한 장의 이미지를 뽑아 두 모델의 예측 결과를 나란히 보여줍니다.
-    val_images = list((OCR_DIR / "images" / "val").glob("*.webp")) + list(
-        (OCR_DIR / "images" / "val").glob("*.jpg")
+    plt.suptitle(
+        "Training Convergence Comparison: Scratch vs Transfer",
+        fontsize=18,
+        fontweight="bold",
+        y=1.05,
     )
-    if val_images and ocr_scratch_weight.exists() and ocr_transfer_weight.exists():
-        # 비교를 극대화하기 위해 랜덤 이미지 1장 선택
-        sample_img_path = random.choice(val_images)
+    plt.tight_layout()
 
-        print(f"🔍 1대1 시각화 샘플 이미지: {sample_img_path.name}")
-        model_s = YOLO(str(ocr_scratch_weight))
-        model_t = YOLO(str(ocr_transfer_weight))
+    comp_save_path = PROJECT_ROOT / "runs" / "ocr_metrics_comparison.png"
+    plt.savefig(comp_save_path, dpi=200, bbox_inches="tight")
+    plt.show()
+    print(f"✅ 학습 수렴(Loss, mAP) 비교 그래프 저장 완료: {comp_save_path}")
 
-        # 동일한 Confidence Threshold(0.3) 적용하여 공정한 비교
-        res_s = model_s.predict(str(sample_img_path), conf=0.3, verbose=False)[0]
-        res_t = model_t.predict(str(sample_img_path), conf=0.3, verbose=False)[0]
+    # ── Convergence Speed Comparison ──
+    MAP_THRESHOLD = 0.80
 
-        img_s = res_s.plot(line_width=2)
-        img_t = res_t.plot(line_width=2)
+    def find_convergence_epoch(df, col, threshold):
+        """Find first epoch where metric >= threshold."""
+        above = df[df[col] >= threshold]
+        return int(above["epoch"].iloc[0]) if len(above) > 0 else None
 
-        img_s_rgb = cv2.cvtColor(img_s, cv2.COLOR_BGR2RGB)
-        img_t_rgb = cv2.cvtColor(img_t, cv2.COLOR_BGR2RGB)
+    if col_map in df_scratch.columns and col_map in df_transfer.columns:
+        scratch_conv = find_convergence_epoch(df_scratch, col_map, MAP_THRESHOLD)
+        transfer_conv = find_convergence_epoch(df_transfer, col_map, MAP_THRESHOLD)
+        print(f"\n⚡ Convergence Speed (mAP≥{MAP_THRESHOLD}):")
+        if transfer_conv is not None:
+            print(f"   Transfer: {transfer_conv} epochs")
+        else:
+            print(f"   Transfer: did not reach {MAP_THRESHOLD}")
+        if scratch_conv is not None:
+            print(f"   Scratch:  {scratch_conv} epochs")
+        else:
+            print(f"   Scratch:  did not reach {MAP_THRESHOLD}")
+        if transfer_conv and scratch_conv:
+            speedup = scratch_conv / transfer_conv
+            print(f"   → Transfer is {speedup:.1f}x faster convergence")
 
-        fig, axes = plt.subplots(1, 2, figsize=(24, 12))
+# 1-2. 혼동 행렬(Confusion Matrix) 이미지 기반 비교
+scratch_cm = (
+    PROJECT_ROOT / "runs/detect/train_ocr_scratch/confusion_matrix_normalized.png"
+)
+transfer_cm = (
+    PROJECT_ROOT / "runs/detect/train_ocr_transfer/confusion_matrix_normalized.png"
+)
 
-        axes[0].imshow(img_s_rgb)
-        axes[0].set_title(
-            "Scratch (Random Init) Model\n(Slower Convergence, Lower Accuracy)",
-            fontsize=16,
-            color="#FF6B6B",
-            fontweight="bold",
-        )
-        axes[0].axis("off")
+if scratch_cm.exists() and transfer_cm.exists():
+    fig, axes = plt.subplots(1, 2, figsize=(20, 8))
 
-        axes[1].imshow(img_t_rgb)
-        axes[1].set_title(
-            "2-Stage Transfer Learning Model\n(High Accuracy, Dense Detection)",
-            fontsize=16,
-            color="#4ECDC4",
-            fontweight="bold",
-        )
-        axes[1].axis("off")
+    img_cm_s = cv2.imread(str(scratch_cm))
+    if img_cm_s is not None:
+        img_cm_s = cv2.cvtColor(img_cm_s, cv2.COLOR_BGR2RGB)
+        axes[0].imshow(img_cm_s)
+    axes[0].set_title(
+        "Scratch: Normalized Confusion Matrix\n(False Positive Rate)",
+        fontsize=15,
+        color="#FF6B6B",
+        fontweight="bold",
+    )
+    axes[0].axis("off")
 
-        plt.suptitle(
-            "1-to-1 Real Detection Comparison on Same Image",
-            fontsize=22,
-            fontweight="bold",
-            y=0.95,
-        )
-        plt.tight_layout()
+    img_cm_t = cv2.imread(str(transfer_cm))
+    if img_cm_t is not None:
+        img_cm_t = cv2.cvtColor(img_cm_t, cv2.COLOR_BGR2RGB)
+        axes[1].imshow(img_cm_t)
+    axes[1].set_title(
+        "Transfer: Normalized Confusion Matrix\n(Accurate Target Detection)",
+        fontsize=15,
+        color="#4ECDC4",
+        fontweight="bold",
+    )
+    axes[1].axis("off")
 
-        vis_save_path = PROJECT_ROOT / "runs" / "ocr_detection_comparison_1to1.png"
-        plt.savefig(vis_save_path, dpi=200, bbox_inches="tight")
-        plt.show()
-        print(f"✅ 1대1 실체 탐지 비교 이미지 저장 완료: {vis_save_path}")
+    plt.suptitle(
+        "Confusion Matrix Comparison (Background False Positives Check)",
+        fontsize=18,
+        fontweight="bold",
+    )
+    plt.tight_layout()
+    cm_save_path = PROJECT_ROOT / "runs" / "ocr_cm_comparison.png"
+    plt.savefig(cm_save_path, dpi=200, bbox_inches="tight")
+    plt.show()
+    print(f"✅ 혼동 행렬 비교 이미지 저장 완료: {cm_save_path}")
+
+# 1-3. PR-Curve 및 F1-Curve 비교 (Trade-off 분석)
+scratch_f1 = PROJECT_ROOT / "runs/detect/train_ocr_scratch/F1_curve.png"
+transfer_f1 = PROJECT_ROOT / "runs/detect/train_ocr_transfer/F1_curve.png"
+scratch_pr = PROJECT_ROOT / "runs/detect/train_ocr_scratch/PR_curve.png"
+transfer_pr = PROJECT_ROOT / "runs/detect/train_ocr_transfer/PR_curve.png"
+
+if (
+    scratch_f1.exists()
+    and transfer_f1.exists()
+    and scratch_pr.exists()
+    and transfer_pr.exists()
+):
+    fig, axes = plt.subplots(2, 2, figsize=(20, 16))
+
+    # [Row 0] F1 Curve
+    img_f1_s = cv2.cvtColor(cv2.imread(str(scratch_f1)), cv2.COLOR_BGR2RGB)
+    axes[0, 0].imshow(img_f1_s)
+    axes[0, 0].set_title(
+        "Scratch: F1-Confidence Curve\n(Lower Peak F1 Score)",
+        fontsize=15,
+        color="#FF6B6B",
+        fontweight="bold",
+    )
+    axes[0, 0].axis("off")
+
+    img_f1_t = cv2.cvtColor(cv2.imread(str(transfer_f1)), cv2.COLOR_BGR2RGB)
+    axes[0, 1].imshow(img_f1_t)
+    axes[0, 1].set_title(
+        "Transfer: F1-Confidence Curve\n(Higher & More Stable Peak F1 Score)",
+        fontsize=15,
+        color="#4ECDC4",
+        fontweight="bold",
+    )
+    axes[0, 1].axis("off")
+
+    # [Row 1] PR Curve
+    img_pr_s = cv2.cvtColor(cv2.imread(str(scratch_pr)), cv2.COLOR_BGR2RGB)
+    axes[1, 0].imshow(img_pr_s)
+    axes[1, 0].set_title(
+        "Scratch: Precision-Recall Curve\n(Smaller Area Under Curve)",
+        fontsize=15,
+        color="#FF6B6B",
+        fontweight="bold",
+    )
+    axes[1, 0].axis("off")
+
+    img_pr_t = cv2.cvtColor(cv2.imread(str(transfer_pr)), cv2.COLOR_BGR2RGB)
+    axes[1, 1].imshow(img_pr_t)
+    axes[1, 1].set_title(
+        "Transfer: Precision-Recall Curve\n(Larger Area = Superior Detection)",
+        fontsize=15,
+        color="#4ECDC4",
+        fontweight="bold",
+    )
+    axes[1, 1].axis("off")
+
+    plt.suptitle(
+        "Final Model Evaluation (F1-Score & PR-Curve Trade-off)",
+        fontsize=20,
+        fontweight="bold",
+        y=0.95,
+    )
+    plt.tight_layout()
+    curves_save_path = PROJECT_ROOT / "runs" / "ocr_curves_comparison.png"
+    plt.savefig(curves_save_path, dpi=200, bbox_inches="tight")
+    plt.show()
+    print(f"✅ PR-Curve 및 F1-Curve 비교 이미지 저장 완료: {curves_save_path}")
+
+# 2. 1대1 실체 탐지 사진 비교 (Same Image)
+# Validation 셋에서 한 장의 이미지를 뽑아 두 모델의 예측 결과를 나란히 보여줍니다.
+val_images = list((OCR_DIR / "images" / "val").glob("*.webp")) + list(
+    (OCR_DIR / "images" / "val").glob("*.jpg")
+)
+if val_images and ocr_scratch_weight.exists() and ocr_transfer_weight.exists():
+    # 비교를 극대화하기 위해 랜덤 이미지 1장 선택
+    sample_img_path = random.choice(val_images)
+
+    print(f"🔍 1대1 시각화 샘플 이미지: {sample_img_path.name}")
+    model_s = YOLO(str(ocr_scratch_weight))
+    model_t = YOLO(str(ocr_transfer_weight))
+
+    # 동일한 Confidence Threshold(0.3) 적용하여 공정한 비교
+    res_s = model_s.predict(str(sample_img_path), conf=0.3, verbose=False)[0]
+    res_t = model_t.predict(str(sample_img_path), conf=0.3, verbose=False)[0]
+
+    img_s = res_s.plot(line_width=2)
+    img_t = res_t.plot(line_width=2)
+
+    img_s_rgb = cv2.cvtColor(img_s, cv2.COLOR_BGR2RGB)
+    img_t_rgb = cv2.cvtColor(img_t, cv2.COLOR_BGR2RGB)
+
+    fig, axes = plt.subplots(1, 2, figsize=(24, 12))
+
+    axes[0].imshow(img_s_rgb)
+    axes[0].set_title(
+        "Scratch (Random Init) Model\n(Slower Convergence, Lower Accuracy)",
+        fontsize=16,
+        color="#FF6B6B",
+        fontweight="bold",
+    )
+    axes[0].axis("off")
+
+    axes[1].imshow(img_t_rgb)
+    axes[1].set_title(
+        "2-Stage Transfer Learning Model\n(High Accuracy, Dense Detection)",
+        fontsize=16,
+        color="#4ECDC4",
+        fontweight="bold",
+    )
+    axes[1].axis("off")
+
+    plt.suptitle(
+        "1-to-1 Real Detection Comparison on Same Image",
+        fontsize=22,
+        fontweight="bold",
+        y=0.95,
+    )
+    plt.tight_layout()
+
+    vis_save_path = PROJECT_ROOT / "runs" / "ocr_detection_comparison_1to1.png"
+    plt.savefig(vis_save_path, dpi=200, bbox_inches="tight")
+    plt.show()
+    print(f"✅ 1대1 실체 탐지 비교 이미지 저장 완료: {vis_save_path}")
 
 # %% [markdown]
 # ## 6. [Phase 5] 최종 전체 파이프라인 실전 추론 (Overall Pipeline & Preprocessing)
@@ -1283,3 +1274,4 @@ if RAW_LEGACY_DIR.exists():
         print("⚠️ raw_legacy_inputs 폴더에 테스트할 도면 이미지가 없습니다.")
 else:
     print("⚠️ raw_legacy_inputs 폴더가 존재하지 않습니다. 테스트할 도면을 넣어주세요.")
+
